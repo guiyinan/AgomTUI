@@ -906,12 +906,13 @@
         const panels = screen.dashboard_panels && screen.dashboard_panels.length
             ? screen.dashboard_panels
             : defaultDashboardPanels(screenSpec.actions || []);
+        const layout = dashboardLayout(panels);
         setWorkspaceViewKind("dashboard");
         els.mainTitle.textContent = "系统首页";
         els.main.innerHTML = `
-            <div class="tui-dashboard-grid">
+            <div class="tui-dashboard-grid" style="${escapeHtml(layout.gridStyle)}">
                 ${panels.map((panel, index) => `
-                    <section class="tui-dash-panel ${escapeHtml(dashboardPanelClass(panel, index))}" data-dashboard-panel="${escapeHtml(panel.key)}" data-dashboard-target="${escapeHtml(dashboardTargetScreen(panel))}" tabindex="0" role="button">
+                    <section class="tui-dash-panel" style="grid-area: ${escapeHtml(layout.areas[index])};" data-dashboard-panel="${escapeHtml(panel.key)}" data-dashboard-target="${escapeHtml(dashboardTargetScreen(panel))}" tabindex="0" role="button">
                         <h3>${escapeHtml(panel.title)}</h3>
                         <div class="tui-loading">读取业务数据...</div>
                     </section>
@@ -972,16 +973,70 @@
         }));
     }
 
-    function dashboardPanelClass(panel, index) {
-        const layout = panel.layout_area || "";
-        const mapped = {
-            regime: "tui-panel-regime",
-            pulse: "tui-panel-pulse",
-            account: "tui-panel-account",
-            alpha: "tui-panel-alpha",
-            tasks: "tui-panel-tasks",
-        }[layout];
-        return mapped || ["tui-panel-regime", "tui-panel-pulse", "tui-panel-account", "tui-panel-alpha", "tui-panel-tasks"][index % 5];
+    function dashboardLayout(panels) {
+        const areas = uniqueDashboardAreas(panels);
+        return {
+            areas,
+            gridStyle: [
+                `--tui-dashboard-areas-desktop: ${dashboardAreaTemplate(areas, 3)}`,
+                `--tui-dashboard-areas-tablet: ${dashboardAreaTemplate(areas, 2)}`,
+                `--tui-dashboard-areas-mobile: ${dashboardAreaTemplate(areas, 1)}`,
+                `--tui-dashboard-rows-desktop: ${dashboardRows(areas, 3, "minmax(0, 1fr)")}`,
+                `--tui-dashboard-rows-tablet: ${dashboardRows(areas, 2, "minmax(190px, 1fr)")}`,
+                `--tui-dashboard-rows-mobile: ${dashboardRows(areas, 1, "minmax(174px, auto)")}`,
+            ].join("; "),
+        };
+    }
+
+    function uniqueDashboardAreas(panels) {
+        const counts = new Map();
+        return panels.map((panel, index) => {
+            const source = panel.layout_area || panel.key || `panel-${index + 1}`;
+            const base = sanitizeDashboardArea(source) || `panel_${index + 1}`;
+            const count = counts.get(base) || 0;
+            counts.set(base, count + 1);
+            return count ? `${base}_${count + 1}` : base;
+        });
+    }
+
+    function sanitizeDashboardArea(value) {
+        const normalized = String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, "_")
+            .replace(/^[-0-9]+/, "")
+            .replace(/_+/g, "_")
+            .replace(/^_+|_+$/g, "");
+        return normalized && normalized !== "none" ? normalized : "";
+    }
+
+    function dashboardAreaTemplate(areas, columns) {
+        const rows = chunkDashboardAreas(areas, columns);
+        return rows.map((row) => `"${expandDashboardRow(row).join(" ")}"`).join(" ");
+    }
+
+    function dashboardRows(areas, columns, rowSize) {
+        const rowCount = Math.max(1, chunkDashboardAreas(areas, columns).length);
+        return Array.from({ length: rowCount }, () => rowSize).join(" ");
+    }
+
+    function chunkDashboardAreas(areas, columns) {
+        const safeAreas = areas.length ? areas : ["panel_1"];
+        const rows = [];
+        for (let index = 0; index < safeAreas.length; index += columns) {
+            rows.push(safeAreas.slice(index, index + columns));
+        }
+        return rows;
+    }
+
+    function expandDashboardRow(row) {
+        const baseSpan = Math.floor(12 / row.length);
+        let remainder = 12 - baseSpan * row.length;
+        return row.flatMap((area) => {
+            const span = baseSpan + (remainder > 0 ? 1 : 0);
+            remainder -= 1;
+            return Array.from({ length: span }, () => area);
+        });
     }
 
     async function loadDashboardPanel(panel) {
