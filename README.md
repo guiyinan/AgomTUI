@@ -11,7 +11,7 @@ Most internal tools stall in the same place:
 - the data API exists, but the usable operator UI does not
 - every new tool reimplements tables, detail views, filters, pagination, and action forms
 - risky actions need confirmation and traceability, but those rules are rebuilt screen by screen
-- one team wants a standalone console, another wants the same surface embedded inside an existing app
+- some teams want to launch it first as a standalone console, while others want to plug the same workbench into an existing Django or internal system
 
 AgomTUI is for that gap. It gives you a reviewed runtime shell for operations-heavy tools, plus a metadata path that lets one workbench drive many screens instead of rebuilding each page by hand.
 
@@ -34,17 +34,17 @@ With the demo alone, a user can immediately see:
 
 ## Demo
 
-### Product overview
+### Overview workspace
 
-![AgomTUI overview](docs/assets/demo-overview.png)
+![AgomTUI overview workspace](docs/assets/demo-overview.png)
 
 ### Standalone runtime workbench
 
 ![AgomTUI standalone runtime](docs/assets/demo-standalone.png)
 
-### Host integration demo
+### Host-mounted runtime
 
-![AgomTUI host integration demo](docs/assets/demo-host-mounted.png)
+![AgomTUI host-mounted runtime](docs/assets/demo-host-mounted.png)
 
 ## What you get
 

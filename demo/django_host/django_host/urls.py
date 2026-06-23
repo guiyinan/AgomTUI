@@ -8,6 +8,7 @@ from . import views
 urlpatterns = [
     path("", views.host_home, name="host-home"),
     path("tui/", views.host_tui, name="host-tui"),
+    path("tui/static/<path:asset_path>", views.host_runtime_asset, name="host-runtime-asset"),
     path("api/tui/catalog/", views.host_catalog, name="host-catalog"),
     path("api/tui/screens/<path:screen_key>/", views.host_screen, name="host-screen"),
     path("api/tui/actions/<path:action_key>/run/", views.host_action, name="host-action"),

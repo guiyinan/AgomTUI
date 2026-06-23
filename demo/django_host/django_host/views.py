@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
@@ -51,19 +51,30 @@ def host_home(request: HttpRequest) -> HttpResponse:
       </div>
     </section>
     """
-    return HttpResponse(demo.layout("AgomTradePro Django Host", body, active="integration"), content_type="text/html; charset=utf-8")
+    return HttpResponse(demo.layout("AgomTUI Django Host", body, active="integration"), content_type="text/html; charset=utf-8")
 
 
 @require_GET
 def host_tui(request: HttpRequest) -> HttpResponse:
     del request
     html = demo.render_runtime_html(
-        title="AgomTradePro Django Host TUI",
+        title="AgomTUI Django Host TUI",
         home_href="/",
-        brand_label="AgomTradePro Django",
+        brand_label="AgomTUI Host",
         api_base="/api/tui",
+        asset_base="/tui/static",
     )
     return HttpResponse(html, content_type="text/html; charset=utf-8")
+
+
+@require_GET
+def host_runtime_asset(request: HttpRequest, asset_path: str) -> HttpResponse:
+    del request
+    try:
+        body, mime = demo.runtime_asset_payload(asset_path)
+    except FileNotFoundError as error:
+        raise Http404(f"Unknown asset: {asset_path}") from error
+    return HttpResponse(body, content_type=mime)
 
 
 @require_GET

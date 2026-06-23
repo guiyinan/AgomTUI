@@ -12,6 +12,19 @@ class DjangoHostDemoTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Real Django Host")
         self.assertContains(response, "Open Django-Mounted TUI")
+        self.assertContains(response, "AgomTUI Django Host")
+
+    def test_host_tui_uses_local_runtime_assets(self) -> None:
+        response = self.client.get("/tui/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "/tui/static/css/tui-workbench.css")
+        self.assertContains(response, "AgomTUI Host")
+
+    def test_runtime_asset_endpoint_serves_css(self) -> None:
+        response = self.client.get("/tui/static/css/tui-workbench.css")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/css; charset=utf-8")
+        self.assertContains(response, ".tui-shell")
 
     def test_catalog_endpoint_returns_host_payload(self) -> None:
         response = self.client.get("/api/tui/catalog/")

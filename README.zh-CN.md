@@ -11,7 +11,7 @@
 - 数据接口已经有了，但真正能给运营或风控人员用的界面还没有
 - 每做一个新工具，都要重新拼表格、详情页、筛选、分页、任务表单
 - 有风险的操作需要确认和约束，但这些规则总是每个页面重复做
-- 一部分团队想先跑独立控制台，另一部分团队又想把同样的能力挂回现有宿主系统
+- 有的团队想先把它当成独立控制台快速跑起来，另一些团队则希望把同一套工作台能力直接嵌入现有 Django 或内部系统里
 
 AgomTUI 就是为这类空档准备的。它提供一个可复用的运行时工作台外壳，让你不用每次都从零搭操作界面，同时保留把同一套 runtime 独立运行或挂进宿主应用的能力。
 
@@ -34,17 +34,17 @@ AgomTUI 就是为这类空档准备的。它提供一个可复用的运行时工
 
 ## Demo
 
-### 产品概览
+### 概览工作区
 
-![AgomTUI 产品概览](docs/assets/demo-overview.png)
+![AgomTUI 概览工作区](docs/assets/demo-overview.png)
 
 ### 独立运行时工作台
 
 ![AgomTUI 独立运行时](docs/assets/demo-standalone.png)
 
-### 宿主集成示例
+### 宿主挂载运行时
 
-![AgomTUI 宿主集成示例](docs/assets/demo-host-mounted.png)
+![AgomTUI 宿主挂载运行时](docs/assets/demo-host-mounted.png)
 
 ## 你实际拿到什么
 

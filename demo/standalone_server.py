@@ -1097,19 +1097,33 @@ def render_runtime_html(
     home_href: str,
     brand_label: str,
     api_base: str,
+    asset_base: str = "/standalone/static",
 ) -> bytes:
     source = (RUNTIME_REF / "tui_workbench.reference.html").read_text(encoding="utf-8")
     runtime_config = json.dumps({"apiBase": api_base}, ensure_ascii=False)
     runtime_config_tag = f'<script>window.__AGOMTUI_RUNTIME__ = {runtime_config};</script>'
+    normalized_asset_base = asset_base.rstrip("/")
     source = source.replace('href="/tui/"', f'href="{home_href}"')
     source = source.replace(">AgomTUI<", f">{esc(brand_label)}<")
-    source = source.replace("./static/css/tui-workbench.css", "/standalone/static/css/tui-workbench.css")
+    source = source.replace("./static/css/tui-workbench.css", f"{normalized_asset_base}/css/tui-workbench.css")
     source = source.replace(
         '<script src="./static/js/tui-workbench.js"></script>',
-        f"{runtime_config_tag}\n    <script src=\"/standalone/static/js/tui-workbench.js\"></script>",
+        f"{runtime_config_tag}\n    <script src=\"{normalized_asset_base}/js/tui-workbench.js\"></script>",
     )
     source = source.replace("<title>AgomTUI Workbench</title>", f"<title>{esc(title)}</title>")
     return source.encode("utf-8")
+
+
+def runtime_asset_payload(relative: str) -> tuple[bytes, str]:
+    asset_path = RUNTIME_REF / "static" / relative
+    if not asset_path.exists() or not asset_path.is_file():
+        raise FileNotFoundError(relative)
+    mime = "text/plain; charset=utf-8"
+    if asset_path.suffix == ".css":
+        mime = "text/css; charset=utf-8"
+    elif asset_path.suffix == ".js":
+        mime = "application/javascript; charset=utf-8"
+    return asset_path.read_bytes(), mime
 
 
 def local_url(port: int, path: str = "/") -> str:
@@ -1396,9 +1410,9 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
             if mode == "integration":
                 self.respond_html(
                     render_runtime_html(
-                        title="AgomTradePro Host TUI",
+                        title="AgomTUI Host Workbench",
                         home_href="/integration/",
-                        brand_label="AgomTradePro",
+                        brand_label="AgomTUI Host",
                         api_base="/integration-api/tui",
                     )
                 )
@@ -1420,10 +1434,10 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/integration-tui/":
             self.respond_html(
-                self.runtime_html(
-                    title="AgomTradePro Host TUI",
+                render_runtime_html(
+                    title="AgomTUI Host Workbench",
                     home_href="/integration/",
-                    brand_label="AgomTradePro",
+                    brand_label="AgomTUI Host",
                     api_base="/integration-api/tui",
                 )
             )
@@ -1517,20 +1531,16 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
 
     def respond_runtime_asset(self, path: str) -> None:
         relative = path.removeprefix("/standalone/static/")
-        asset_path = RUNTIME_REF / "static" / relative
-        if not asset_path.exists() or not asset_path.is_file():
+        try:
+            body, mime = runtime_asset_payload(relative)
+        except FileNotFoundError:
             self.respond_error_json(HTTPStatus.NOT_FOUND, f"Unknown asset: {path}")
             return
-        mime = "text/plain; charset=utf-8"
-        if asset_path.suffix == ".css":
-            mime = "text/css; charset=utf-8"
-        elif asset_path.suffix == ".js":
-            mime = "application/javascript; charset=utf-8"
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", mime)
-        self.send_header("Content-Length", str(asset_path.stat().st_size))
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(asset_path.read_bytes())
+        self.wfile.write(body)
 
     def respond_html(self, body: bytes) -> None:
         self.send_response(HTTPStatus.OK)
