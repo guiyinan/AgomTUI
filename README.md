@@ -2,7 +2,9 @@
 
 [中文说明](./README.zh-CN.md)
 
-Ship an internal console that already knows how to browse data, run actions, ask for confirmation, and mount into a host app, without hand-building the whole workbench UI from scratch.
+**把后端 API 和业务逻辑直接变成可用的前端操作台 TUI。**
+
+Generate a usable TUI operations workbench directly from backend APIs and business logic, instead of hand-building the whole frontend console from scratch.
 
 ## The problem it solves
 
