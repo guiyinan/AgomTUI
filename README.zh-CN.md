@@ -4,16 +4,110 @@
 
 **把后端 API 和业务逻辑直接变成可用的前端操作台 TUI。**
 
+AgomTUI 面向已经有后端 API、但还缺内部操作界面的系统开发者。它把 API 和业务能力转换成 metadata，再用 metadata 自动生成可用的前端控制台。
+
+目标很直接：几乎 0 前端编码、低痛苦生成内部工具 UI。
+
+## 它做什么
+
+AgomTUI 提供一条从后端能力到可用界面的完整路径：
+
+1. 你已有的 API 和业务逻辑描述系统能做什么。
+2. AgomTUI 根据这些证据生成 runtime metadata。
+3. 浏览器 runtime 根据 metadata 渲染 UI。
+4. 使用者拿到列表、详情、筛选、动作表单、确认弹窗和调试能力，而不是每个流程都重新写一个前端页面。
+
+它的核心价值不是某个单独组件库，而是一套把系统能力稳定转成操作界面的生成路径。
+
+## 对开发者意味着什么
+
+- 现有 API 和后端逻辑可以继续沿用。
+- 不用为每个内部工具重复写表格、表单、详情页、动作面板和确认流程。
+- 可以先生成一套能用的 UI，再只在真正有业务差异的地方微调 metadata 或宿主集成。
+- 可以独立运行，也可以把同一套 runtime 挂进现有系统。
+
+## 通用性如何？
+
+AgomTUI 对“基于 API 的内部操作台”有较强通用性，但它不是所有前端 UI 的通用替代品。
+
+它最适合这类产品形态：
+
+- 数据列表、详情页、筛选和搜索
+- 带参数和结果的操作动作
+- 确认、权限、审计、重新验证身份等治理规则
+- 业务逻辑由后端持有，并通过 API 或 action executor 暴露
+
+所以它适合内部运营台、管理后台、风控工作台、审核系统、治理面板和内部数据管理界面。
+
+它不适合作为 C 端产品页、营销站、可视化编辑器、游戏或高度定制交互体验的主 UI 方案。这些界面仍然可以调用同样的 API，但通常需要专门设计和手写前端，而不是主要依赖 metadata 生成页面。
+
+## UI 能二次开发吗？
+
+可以。AgomTUI 应该被理解为“生成出来的基础 UI + 可扩展机制”。
+
+推荐的二次开发层次是：
+
+- 通过 metadata 调整页面名称、分组、排序、字段文案和 action 位置
+- 通过 host adapter 接入鉴权、权限、action 执行、审计存储和部署形态
+- 扩展 renderer，支持新的 metadata-driven 视图类型
+- 调整主题和 shell，让它适配产品品牌或宿主系统
+- 使用经过 review 的 override 文件，保留那些需要跨生成周期存在的手工调整
+
+核心规则是：业务逻辑留在宿主系统，界面尽量由 metadata 驱动。能被多个工具复用的能力，应该沉到 runtime 或 metadata contract；只服务某个宿主的能力，应该放在 host adapter 或 metadata override 里。
+
+## 能插入图表和富组件吗？
+
+可以。AgomTUI 应该支持 ECharts、Chart.js、HTMX partial、Mermaid、Markdown renderer、日期选择器、代码编辑器这类富组件，但它们应该通过扩展点接入，而不是写死到每个生成页面里。
+
+AgomTradePro 的经典前端里已经有类似模式：
+
+- ECharts 用在宏观时间线、筛选 dashboard、股票详情图、组合配置 / 收益图、公开分享收益曲线
+- Chart.js 用在部分审计图和估值图
+- HTMX 用于服务端 partial 局部刷新和交互面板
+- Flatpickr、SweetAlert2、Alpine.js 用作轻量页面增强
+- Mermaid、Marked、CodeMirror 用于图示、Markdown 渲染和脚本编辑
+
+AgomTUI 适合分三层支持这些能力：
+
+- 内置 metadata renderer：支持常见 line、bar、pie、KPI trend、表格 + 图表等通用视图
+- 自定义 renderer extension：让宿主注册 `renderer: "echarts"`、`renderer: "code-editor"` 这类专用组件
+- host slot：允许宿主插入受控的服务端渲染片段；如果宿主本来就使用 HTMX，可以在这些 slot 里使用 HTMX partial
+
+HTMX 更适合宿主挂载和服务端渲染集成，尤其是 Django 这类页面。独立 metadata runtime 的默认路径仍应是 API 数据 + runtime renderer。这样 core 保持可移植，同时宿主又可以在 metadata 不够表达的地方插入更强的组件。
+
+## 是否需要 CI 护栏和开发规则？
+
+需要。只要允许二次开发，就应该有 CI 护栏；否则生成式 UI 框架很容易退化成一堆一次性页面，失去复用价值。
+
+建议的 CI 护栏：
+
+- 每个发布态 metadata artifact 都必须通过 schema 校验
+- 跑 compiler 测试，确保 API 证据仍能稳定生成 metadata
+- 跑 runtime contract 测试，覆盖 governed action、缺字段补填、确认、验密和审计行为
+- 跑官方 host adapter 的集成测试
+- 阻止被治理的写操作绕过确认或审计
+- 发布态 metadata 不直接手改；需要保留的终态调整放进经过 review 的 override 文件
+
+建议的开发规则：
+
+- 优先用 metadata 和 renderer extension 解决问题，再考虑手写页面代码
+- 宿主业务词汇、权限和执行逻辑不要进入 core runtime
+- 修改 metadata 形状、action 协议或 adapter 行为时，必须补 contract test
+- 新增图表、HTMX slot、代码编辑器、图示渲染等富组件 renderer 时，要补浏览器或视觉回归测试
+- 浏览器 runtime 是共享 shell，不应该堆某个产品专属的 workflow 逻辑
+- 新增扩展点要先文档化，再在宿主项目里依赖它
+
 ## 它解决的痛点
 
 大多数内部工具都会卡在同一类问题上：
 
 - 数据接口已经有了，但真正能给运营或风控人员用的界面还没有
 - 每做一个新工具，都要重新拼表格、详情页、筛选、分页、任务表单
+- 系统开发者不得不花前端时间描述那些其实已经隐含在 API 里的页面结构
 - 有风险的操作需要确认和约束，但这些规则总是每个页面重复做
 - 有的团队想先把它当成独立控制台快速跑起来，另一些团队则希望把同一套工作台能力直接嵌入现有 Django 或内部系统里
 
-AgomTUI 就是为这类空档准备的。它提供一个可复用的运行时工作台外壳，让你不用每次都从零搭操作界面，同时保留把同一套 runtime 独立运行或挂进宿主应用的能力。
+AgomTUI 就是为这类空档准备的。你不需要为每个工具手写表格、详情、筛选、表单和确认弹窗，只需要让生成出来的 metadata 描述界面，并在宿主系统真正有差异的地方做少量接入和定制。
 
 ## 适合什么场景
 
@@ -49,9 +143,32 @@ AgomTUI 就是为这类空档准备的。它提供一个可复用的运行时工
 ## 你实际拿到什么
 
 - 一个已经带导航、说明栏、筛选、分页、任务表单、确认弹窗、原始响应调试抽屉的终端式工作台
-- 一套 metadata contract，用来描述 screen 和 action，而不是反复重写整套 UI
-- 一条从代码证据到已发布 runtime metadata 的路径
+- 一套 metadata contract，让生成出来的 metadata 描述 screen 和 action，而不是反复重写整套 UI
+- 一条从 API 和代码证据到已发布 runtime metadata 的 compiler 路径
 - 一种 host adapter 模式，让同一套 runtime 可以独立运行，也可以挂进别的应用外壳
+
+## 高层工作方式
+
+技术路径可以概括为四步：
+
+1. 从宿主系统收集 API 或代码证据
+2. 编译生成 AgomTUI runtime metadata
+3. 把 metadata 提供给 runtime shell
+4. 把 action 执行、鉴权和审计接回宿主系统
+
+前端界面由 metadata 生成；业务逻辑和执行权仍然留在宿主系统里。
+
+## 必须基于 Django 或 Python 吗？
+
+不必须。AgomTUI 的前端 runtime 框架本质上是浏览器端 shell，加上一套 metadata / action contract。它不要求宿主必须是 Django，也不要求运行时 UI 必须接 Python 后端。
+
+这个仓库里的 Python / Django 分工是：
+
+- Python 是当前 schema helper、compiler 骨架、测试和 demo server 的实现语言。
+- Django 是第一版 host adapter 示例，因为它是当前优先集成目标。
+- 非 Django 宿主也可以使用同一套 runtime，只要它能提供 metadata、执行 action，并返回 AgomTUI 约定的响应 contract。
+
+换句话说：Django / Python 是已提供的集成路径，不是这套前端框架的硬性前提。后续 adapter 可以面向 FastAPI、Flask、Node 服务、Java 服务，或者只基于 OpenAPI 的后端。
 
 ## 仓库内容
 
@@ -68,6 +185,8 @@ AgomTUI 就是为这类空档准备的。它提供一个可复用的运行时工
 如果你在判断它到底省不省事，最直接的答案是：
 
 - API 可以继续沿用，不用推倒重来
+- metadata 可以从 API / 代码证据生成，不需要手工描述每个页面
+- 标准内部工具场景下，几乎可以不写前端代码就得到可用 UI
 - 不用每做一个内部工具都重写一遍操作界面
 - 一套 runtime 可以服务多块内部工作流
 - 可以先做独立控制台，后面再挂回宿主系统，不用把 runtime 再重做一次

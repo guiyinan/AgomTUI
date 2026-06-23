@@ -10,8 +10,11 @@ This folder contains the first extracted runtime shell from AgomTradePro.
 - generic action groups, task cards, and confirmation flow
 - governed action protocol handling for missing fields, confirmation, and password challenge responses
 - generic datagrid / detail / message / dashboard renderers
+- built-in rich metadata renderers for `chart`, `kpi_trend`, `table_chart`, and safe `host_slot` views
+- renderer extension registration via `window.AgomTUIRenderers.register(name, rendererFn)` for host-owned renderers such as ECharts, CodeMirror, Mermaid, or Markdown
 - row-fill, inspector, pager, filter, modal, and raw-debug drawer behaviors
 - host-configurable API base via `window.__AGOMTUI_RUNTIME__.apiBase`
+- optional host slot HTML insertion via `window.__AGOMTUI_RUNTIME__.allowHostHtmlSlots`; disabled by default
 
 ## What is still host-specific
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,30 @@ TUI_METADATA_OVERRIDE_SCHEMA_VERSION = "tui-metadata-override.v1"
 TUI_METADATA_SCHEMA_PATH = Path(__file__).resolve().parent / "schema" / "tui_metadata.schema.v3.json"
 ALLOWED_TUI_RISKS = {"read", "ai", "write", "unsafe", "admin"}
 ALLOWED_TUI_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
-ALLOWED_TUI_VIEW_TYPES = {"auto", "status", "detail", "datagrid", "message", "queue_workbench"}
+ALLOWED_TUI_VIEW_TYPES = {
+    "auto",
+    "status",
+    "detail",
+    "datagrid",
+    "message",
+    "queue_workbench",
+    "chart",
+    "kpi_trend",
+    "table_chart",
+    "host_slot",
+    "custom",
+}
+ALLOWED_TUI_VIEW_MODEL_KINDS = {
+    "auto",
+    "datagrid",
+    "detail",
+    "message",
+    "chart",
+    "kpi_trend",
+    "table_chart",
+    "host_slot",
+    "custom",
+}
 ALLOWED_TUI_SENSITIVE_LEVELS = {"none", "low", "medium", "high", "critical"}
 ALLOWED_TUI_FIELD_INPUT_TYPES = {
     "checkbox",
@@ -58,6 +82,19 @@ ALLOWED_TUI_FIELD_KEYS = {
 }
 ALLOWED_TUI_VIEW_MODEL_KEYS = {
     "kind",
+    "renderer",
+    "chart_type",
+    "data_path",
+    "series_path",
+    "x_path",
+    "y_path",
+    "label_path",
+    "value_path",
+    "table_rows_path",
+    "table_columns_path",
+    "slot_key",
+    "partial_path",
+    "fallback_message",
     "rows_path",
     "total_path",
     "page_path",
@@ -71,6 +108,11 @@ ALLOWED_TUI_DASHBOARD_PANEL_KINDS = {
     "placeholder",
     "regime_quadrant",
     "status",
+    "chart",
+    "kpi_trend",
+    "table_chart",
+    "host_slot",
+    "custom",
 }
 ALLOWED_TUI_DASHBOARD_PANEL_KEYS = {
     "key",
@@ -109,6 +151,7 @@ HIGH_REVIEW_FIELD_TOKENS = (
     "weight",
 )
 GOVERNED_TUI_RISKS = {"write", "admin"}
+_SAFE_RENDERER_PATTERN = r"^[A-Za-z][A-Za-z0-9_-]{0,63}$"
 
 
 class TuiMetadataValidationError(ValueError):
@@ -299,8 +342,10 @@ def validate_tui_metadata(payload: dict[str, Any]) -> dict[str, Any]:
                 raise TuiMetadataValidationError(f"Action view_model has unsupported key: {action['key']}.{key}")
             if not isinstance(value, str):
                 raise TuiMetadataValidationError(f"Action view_model path must be a string: {action['key']}.{key}")
-            if key == "kind" and value not in {"auto", "datagrid", "detail", "message"}:
+            if key == "kind" and value not in ALLOWED_TUI_VIEW_MODEL_KINDS:
                 raise TuiMetadataValidationError(f"Action view_model has unsupported kind: {action['key']}.{value}")
+            if key == "renderer":
+                _validate_renderer_name(value, f"Action view_model renderer is invalid: {action['key']}.{value}")
         action.setdefault("description", "")
         action.setdefault("source", "published")
         action.setdefault("raw_debug", True)
@@ -575,6 +620,11 @@ def _validate_confirmed_operation_contract(action: dict[str, Any]) -> None:
             raise TuiMetadataValidationError(
                 f"Numeric write field has incompatible value_type: {action['key']}.{field['key']}"
             )
+
+
+def _validate_renderer_name(value: str, message: str) -> None:
+    if not re.fullmatch(_SAFE_RENDERER_PATTERN, value):
+        raise TuiMetadataValidationError(message)
 
 
 def _validate_with_json_schema(payload: dict[str, Any]) -> None:

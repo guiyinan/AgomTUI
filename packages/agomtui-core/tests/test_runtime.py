@@ -13,6 +13,7 @@ from agomtui_core import (
     apply_default_field_values,
     build_confirmation_required_result,
     build_missing_fields_result,
+    compact_tui_metadata_payload,
     missing_required_fields,
     normalize_runtime_metadata_payload,
     validate_tui_metadata,
@@ -226,6 +227,144 @@ class RuntimeHelpersTests(unittest.TestCase):
 
         with self.assertRaises(TuiMetadataValidationError):
             validate_tui_metadata(payload)
+
+    def test_metadata_accepts_rich_component_view_models(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
+        )
+        payload["screens"][0]["view_type"] = "chart"
+        payload["screens"][0]["dashboard_panels"] = [
+            {
+                "key": "trend-panel",
+                "title": "Trend",
+                "kind": "chart",
+                "action_key": "overview.status",
+            },
+            {
+                "key": "slot-panel",
+                "title": "Host Slot",
+                "kind": "host_slot",
+            },
+        ]
+        payload["actions"][0].update(
+            {
+                "view_type": "table_chart",
+                "view_model": {
+                    "kind": "table_chart",
+                    "renderer": "echarts",
+                    "chart_type": "line",
+                    "data_path": "data.history",
+                    "x_path": "date",
+                    "y_path": "value",
+                    "table_rows_path": "data.rows",
+                    "slot_key": "overview-slot",
+                    "fallback_message": "Host content disabled.",
+                },
+            }
+        )
+
+        validated = validate_tui_metadata(payload)
+        compacted = compact_tui_metadata_payload(validated)
+
+        self.assertEqual(validated["actions"][0]["view_model"]["renderer"], "echarts")
+        self.assertEqual(compacted["actions"][0]["view_model"]["kind"], "table_chart")
+
+    def test_metadata_rejects_unsafe_renderer_name(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
+        )
+        payload["actions"][0]["view_model"] = {
+            "kind": "chart",
+            "renderer": "<script>",
+        }
+
+        with self.assertRaises(TuiMetadataValidationError):
+            validate_tui_metadata(payload)
+
+    def test_generic_view_model_builder_builds_chart_from_paths(self) -> None:
+        builder = GenericRuntimeViewModelBuilder()
+        action = {
+            "key": "overview.nav",
+            "label": "NAV Trend",
+            "view_type": "chart",
+            "view_model": {
+                "kind": "chart",
+                "chart_type": "line",
+                "data_path": "history",
+                "x_path": "date",
+                "y_path": "nav",
+            },
+        }
+
+        view_model = builder.infer(
+            action=action,
+            payload={"history": [{"date": "D1", "nav": 1.0}, {"date": "D2", "nav": 1.2}]},
+            status_code=200,
+        )
+
+        self.assertEqual(view_model["kind"], "chart")
+        self.assertEqual(view_model["series"][0]["points"][1]["label"], "D2")
+        self.assertEqual(view_model["series"][0]["points"][1]["value"], 1.2)
+
+    def test_generic_view_model_builder_builds_table_chart_and_host_slot(self) -> None:
+        builder = GenericRuntimeViewModelBuilder()
+        table_action = {
+            "key": "overview.table_chart",
+            "label": "Table Chart",
+            "view_type": "table_chart",
+            "view_model": {
+                "kind": "table_chart",
+                "data_path": "history",
+                "x_path": "label",
+                "y_path": "value",
+                "table_rows_path": "rows",
+            },
+        }
+        slot_action = {
+            "key": "overview.slot",
+            "label": "Slot",
+            "view_type": "host_slot",
+            "view_model": {
+                "kind": "host_slot",
+                "slot_key": "overview-slot",
+                "partial_path": "partial",
+            },
+        }
+
+        table_model = builder.infer(
+            action=table_action,
+            payload={
+                "history": [{"label": "A", "value": 3}],
+                "rows": [{"asset": "A", "weight": 0.4}],
+            },
+            status_code=200,
+        )
+        slot_model = builder.infer(
+            action=slot_action,
+            payload={"partial": "<div hx-get=\"/api/demo/partial/\">Ready</div>"},
+            status_code=200,
+        )
+
+        self.assertEqual(table_model["kind"], "table_chart")
+        self.assertEqual(table_model["table"]["rows"][0]["asset"], "A")
+        self.assertEqual(slot_model["kind"], "host_slot")
+        self.assertIn("hx-get", slot_model["partial_html"])
+
+    def test_reference_runtime_exposes_rich_renderer_contract(self) -> None:
+        runtime_js = (
+            REPO_ROOT
+            / "packages"
+            / "agomtui-runtime"
+            / "reference"
+            / "static"
+            / "js"
+            / "tui-workbench.js"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("window.AgomTUIRenderers", runtime_js)
+        self.assertIn("registerRenderer", runtime_js)
+        self.assertIn("allowHostHtmlSlots", runtime_js)
+        self.assertIn("window.htmx.process", runtime_js)
 
     def test_governed_runner_blocks_unconfirmed_action_before_executor_and_audits_attempt(self) -> None:
         action = {

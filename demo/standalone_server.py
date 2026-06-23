@@ -317,6 +317,22 @@ REGIME_SNAPSHOT = {
     "updated_at": "2026-06-22 09:22",
 }
 
+RICH_NAV_HISTORY = [
+    {"date": "06-17", "nav": 100.0},
+    {"date": "06-18", "nav": 101.4},
+    {"date": "06-19", "nav": 100.9},
+    {"date": "06-20", "nav": 103.2},
+    {"date": "06-21", "nav": 104.7},
+    {"date": "06-22", "nav": 106.1},
+]
+
+RICH_ALLOCATION_ROWS = [
+    {"asset": "Equity", "weight": 42, "target": 40, "status": "overweight"},
+    {"asset": "Rates", "weight": 18, "target": 20, "status": "watch"},
+    {"asset": "Credit", "weight": 24, "target": 25, "status": "aligned"},
+    {"asset": "Cash", "weight": 16, "target": 15, "status": "buffer"},
+]
+
 
 def action_index() -> dict[str, dict[str, Any]]:
     return {str(action["key"]): copy.deepcopy(action) for action in VALIDATED_METADATA["actions"]}
@@ -626,6 +642,69 @@ def execute_action_logic(action_key: str, params: dict[str, Any], confirmed: boo
             action_key,
             datagrid_view("Task Queue", "运行 / 首页摘录", task_columns(), rows),
             raw={"source": "/api/demo/tasks/", "panel": "task-monitor", "generated_at": utc_now()},
+        )
+    if action_key == "command-center.nav-trend":
+        points = [{"label": row["date"], "value": row["nav"]} for row in RICH_NAV_HISTORY]
+        return response(
+            action_key,
+            {
+                "kind": "chart",
+                "renderer": "line",
+                "chart_type": "line",
+                "title": "NAV Trend",
+                "status": "正常 / Metadata Renderer",
+                "series": [{"name": "NAV", "points": points}],
+                "empty_message": "No NAV history available.",
+            },
+            raw={"source": "/api/demo/rich/nav-trend/", "data": {"history": copy.deepcopy(RICH_NAV_HISTORY)}, "generated_at": utc_now()},
+        )
+    if action_key == "command-center.allocation-table-chart":
+        rows = copy.deepcopy(RICH_ALLOCATION_ROWS)
+        columns = [
+            {"key": "asset", "label": "Asset"},
+            {"key": "weight", "label": "Weight %"},
+            {"key": "target", "label": "Target %"},
+            {"key": "status", "label": "Status"},
+        ]
+        points = [{"label": row["asset"], "value": row["weight"]} for row in rows]
+        return response(
+            action_key,
+            {
+                "kind": "table_chart",
+                "title": "Allocation Table + Chart",
+                "status": "正常 / Metadata Renderer",
+                "chart": {
+                    "kind": "chart",
+                    "renderer": "bar",
+                    "chart_type": "bar",
+                    "title": "Allocation Weight",
+                    "series": [{"name": "Weight", "points": points}],
+                    "empty_message": "No allocation data available.",
+                },
+                "table": datagrid_view("Allocation Rows", "正常 / 同源表格", columns, rows),
+                "empty_message": "No allocation data available.",
+            },
+            raw={"source": "/api/demo/rich/allocation/", "data": {"rows": rows}, "generated_at": utc_now()},
+        )
+    if action_key == "command-center.host-partial":
+        partial_html = (
+            '<div class="tui-host-partial-demo">'
+            "<strong>Controlled host partial</strong>"
+            "<span>This HTML is only inserted when allowHostHtmlSlots is enabled by the host.</span>"
+            "</div>"
+        )
+        return response(
+            action_key,
+            {
+                "kind": "host_slot",
+                "renderer": "host-slot",
+                "title": "Host Partial Slot",
+                "status": "安全 / 默认禁用 HTML 插入",
+                "slot_key": "rich-components-demo",
+                "partial_html": partial_html,
+                "fallback_message": "Host partial rendering is disabled until the host enables HTML slots.",
+            },
+            raw={"source": "/api/demo/rich/host-partial/", "data": {"partial_html": partial_html}, "generated_at": utc_now()},
         )
     if action_key in {"execution.accounts.list", "param.execution.accounts.filter-risk"}:
         risk_level = str(params.get("risk_level") or ("high" if action_key.startswith("param.") else "all"))
@@ -1151,12 +1230,17 @@ def render_runtime_html(
     runtime_config = json.dumps({"apiBase": api_base}, ensure_ascii=False)
     runtime_config_tag = f'<script>window.__AGOMTUI_RUNTIME__ = {runtime_config};</script>'
     normalized_asset_base = asset_base.rstrip("/")
+    css_version = int((RUNTIME_REF / "static" / "css" / "tui-workbench.css").stat().st_mtime)
+    js_version = int((RUNTIME_REF / "static" / "js" / "tui-workbench.js").stat().st_mtime)
     source = source.replace('href="/tui/"', f'href="{home_href}"')
     source = source.replace(">AgomTUI<", f">{esc(brand_label)}<")
-    source = source.replace("./static/css/tui-workbench.css", f"{normalized_asset_base}/css/tui-workbench.css")
+    source = source.replace(
+        "./static/css/tui-workbench.css",
+        f"{normalized_asset_base}/css/tui-workbench.css?v={css_version}",
+    )
     source = source.replace(
         '<script src="./static/js/tui-workbench.js"></script>',
-        f"{runtime_config_tag}\n    <script src=\"{normalized_asset_base}/js/tui-workbench.js\"></script>",
+        f"{runtime_config_tag}\n    <script src=\"{normalized_asset_base}/js/tui-workbench.js?v={js_version}\"></script>",
     )
     source = source.replace("<title>AgomTUI Workbench</title>", f"<title>{esc(title)}</title>")
     return source.encode("utf-8")
@@ -1588,6 +1672,7 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
             return
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", mime)
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

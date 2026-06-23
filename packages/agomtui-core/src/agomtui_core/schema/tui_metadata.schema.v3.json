@@ -144,7 +144,20 @@
     "viewModel": {
       "type": "object",
       "properties": {
-        "kind": { "enum": ["auto", "datagrid", "detail", "message"] },
+        "kind": { "enum": ["auto", "datagrid", "detail", "message", "chart", "kpi_trend", "table_chart", "host_slot", "custom"] },
+        "renderer": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$" },
+        "chart_type": { "type": "string" },
+        "data_path": { "type": "string" },
+        "series_path": { "type": "string" },
+        "x_path": { "type": "string" },
+        "y_path": { "type": "string" },
+        "label_path": { "type": "string" },
+        "value_path": { "type": "string" },
+        "table_rows_path": { "type": "string" },
+        "table_columns_path": { "type": "string" },
+        "slot_key": { "type": "string" },
+        "partial_path": { "type": "string" },
+        "fallback_message": { "type": "string" },
         "rows_path": { "type": "string" },
         "total_path": { "type": "string" },
         "page_path": { "type": "string" },
@@ -160,7 +173,7 @@
       "properties": {
         "key": { "type": "string", "minLength": 1 },
         "title": { "type": "string", "minLength": 1 },
-        "kind": { "enum": ["datagrid", "detail", "placeholder", "regime_quadrant", "status"] },
+        "kind": { "enum": ["datagrid", "detail", "placeholder", "regime_quadrant", "status", "chart", "kpi_trend", "table_chart", "host_slot", "custom"] },
         "action_key": { "type": "string" },
         "status": { "type": "string" },
         "note": { "type": "string" },
@@ -182,7 +195,7 @@
       "additionalProperties": false
     },
     "viewType": {
-      "enum": ["auto", "status", "detail", "datagrid", "message", "queue_workbench"]
+      "enum": ["auto", "status", "detail", "datagrid", "message", "queue_workbench", "chart", "kpi_trend", "table_chart", "host_slot", "custom"]
     }
   },
   "additionalProperties": true

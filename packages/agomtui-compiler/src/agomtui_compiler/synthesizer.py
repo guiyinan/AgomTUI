@@ -82,6 +82,10 @@ class PromptOnlySynthesizer:
             "Do not invent visibility rules, confirmation policy, or business-only color logic.",
             "Do not invent product-specific screens, workflow sequencing, or business narratives unless evidence requires them.",
             "Prefer host-agnostic runtime metadata that can be mounted by adapters instead of app-specific page choreography.",
+            "When evidence clearly describes trends, proportions, KPIs, or table-plus-chart analysis, prefer chart, kpi_trend, or table_chart view_model kinds over prose-only message views.",
+            "Do not emit arbitrary HTML in metadata. Use host_slot only for controlled host-rendered fragments that the host adapter explicitly supports.",
+            "Represent ECharts, CodeMirror, Mermaid, HTMX, or similar rich UI with renderer hints or host_slot metadata; do not make them mandatory core runtime dependencies.",
+            "Use HTMX partials only through host_slot metadata when the host application already owns that server-rendered partial contract.",
             "Emit one metadata JSON candidate only.",
         ]
         system = (

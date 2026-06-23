@@ -91,6 +91,41 @@
       ]
     },
     {
+      "key": "command-center.rich-components",
+      "label": "Rich Components",
+      "module_key": "command-center",
+      "group": "control",
+      "summary": "Demonstrate metadata-driven chart, table-chart, and controlled host slot rendering.",
+      "view_type": "status",
+      "business_context": {
+        "objective": "Show that API-shaped metadata can request richer UI without hand-writing a page.",
+        "decision_output": "Developer sees built-in chart/table renderers and the safe host-slot extension boundary."
+      },
+      "dashboard_panels": [
+        {
+          "key": "nav-trend",
+          "title": "NAV Trend",
+          "kind": "chart",
+          "action_key": "command-center.nav-trend",
+          "layout_area": "regime"
+        },
+        {
+          "key": "allocation-table-chart",
+          "title": "Allocation Table + Chart",
+          "kind": "table_chart",
+          "action_key": "command-center.allocation-table-chart",
+          "layout_area": "account"
+        },
+        {
+          "key": "host-partial",
+          "title": "Host Partial Slot",
+          "kind": "host_slot",
+          "action_key": "command-center.host-partial",
+          "layout_area": "tasks"
+        }
+      ]
+    },
+    {
       "key": "execution.accounts",
       "label": "Accounts",
       "module_key": "execution",
@@ -226,6 +261,78 @@
       "sequence": 3,
       "description": "Read queue health for the home dashboard.",
       "source": "approved:demo"
+    },
+    {
+      "key": "command-center.nav-trend",
+      "label": "NAV Trend",
+      "method": "GET",
+      "endpoint": "/api/demo/rich/nav-trend/",
+      "intent": "read_nav_trend",
+      "screen_key": "command-center.rich-components",
+      "module_key": "command-center",
+      "view_type": "chart",
+      "risk": "read",
+      "task_tier": "support",
+      "task_group": "00 Dashboard",
+      "sequence": 4,
+      "description": "Render a built-in line chart from metadata paths.",
+      "source": "approved:demo",
+      "view_model": {
+        "kind": "chart",
+        "renderer": "line",
+        "chart_type": "line",
+        "data_path": "data.history",
+        "x_path": "date",
+        "y_path": "nav"
+      }
+    },
+    {
+      "key": "command-center.allocation-table-chart",
+      "label": "Allocation Table + Chart",
+      "method": "GET",
+      "endpoint": "/api/demo/rich/allocation/",
+      "intent": "read_allocation_table_chart",
+      "screen_key": "command-center.rich-components",
+      "module_key": "command-center",
+      "view_type": "table_chart",
+      "risk": "read",
+      "task_tier": "support",
+      "task_group": "00 Dashboard",
+      "sequence": 5,
+      "description": "Render a built-in table-plus-chart view from one payload.",
+      "source": "approved:demo",
+      "view_model": {
+        "kind": "table_chart",
+        "renderer": "bar",
+        "chart_type": "bar",
+        "data_path": "data.rows",
+        "x_path": "asset",
+        "y_path": "weight",
+        "table_rows_path": "data.rows"
+      }
+    },
+    {
+      "key": "command-center.host-partial",
+      "label": "Host Partial Slot",
+      "method": "GET",
+      "endpoint": "/api/demo/rich/host-partial/",
+      "intent": "read_host_slot_partial",
+      "screen_key": "command-center.rich-components",
+      "module_key": "command-center",
+      "view_type": "host_slot",
+      "risk": "read",
+      "task_tier": "support",
+      "task_group": "00 Dashboard",
+      "sequence": 6,
+      "description": "Expose a controlled host slot without enabling arbitrary HTML by default.",
+      "source": "approved:demo",
+      "view_model": {
+        "kind": "host_slot",
+        "renderer": "host-slot",
+        "slot_key": "rich-components-demo",
+        "partial_path": "data.partial_html",
+        "fallback_message": "Host partial rendering is disabled until the host enables HTML slots."
+      }
     },
     {
       "key": "execution.accounts.list",

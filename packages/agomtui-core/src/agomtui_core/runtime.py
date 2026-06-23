@@ -632,6 +632,16 @@ class GenericRuntimeViewModelBuilder:
         forced_kind = self._view_model_path(action, "kind")
         if isinstance(data, dict) and self._is_endpoint_directory(data):
             return self._endpoint_directory_model(action, data, status_code)
+        if forced_kind == "chart":
+            return self._chart_model(action, data, status_code)
+        if forced_kind == "kpi_trend":
+            return self._kpi_trend_model(action, data, status_code)
+        if forced_kind == "table_chart":
+            return self._table_chart_model(action, data, status_code)
+        if forced_kind == "host_slot":
+            return self._host_slot_model(action, data, status_code)
+        if forced_kind == "custom":
+            return self._custom_model(action, data, status_code)
         if forced_kind == "detail" and isinstance(data, dict):
             return self._detail_model(action, data, status_code)
         if forced_kind == "message":
@@ -784,6 +794,178 @@ class GenericRuntimeViewModelBuilder:
                 continue
             payload[normalized_key] = self._display_value_for_key(normalized_key, value, row)
         return payload
+
+    def _chart_model(
+        self,
+        action: Mapping[str, Any],
+        payload: Any,
+        status_code: int,
+    ) -> dict[str, Any]:
+        config = action.get("view_model") if isinstance(action.get("view_model"), Mapping) else {}
+        data = self._list_from_config_path(payload, action, "data_path") or self._list_from_config_path(payload, action, "series_path")
+        if data is None and isinstance(payload, list):
+            data = payload
+        if data is None and isinstance(payload, Mapping):
+            data = self._find_list_value(payload)
+        points = self._chart_points(action, data or [])
+        return {
+            "kind": "chart",
+            "renderer": str(config.get("renderer") or config.get("chart_type") or "line"),
+            "chart_type": str(config.get("chart_type") or config.get("renderer") or "line"),
+            "title": self._action_title(action),
+            "status": self._status_label(status_code, payload),
+            "series": [
+                {
+                    "name": self._action_title(action),
+                    "points": points,
+                }
+            ],
+            "empty_message": "No chart data available.",
+        }
+
+    def _kpi_trend_model(
+        self,
+        action: Mapping[str, Any],
+        payload: Any,
+        status_code: int,
+    ) -> dict[str, Any]:
+        value_path = self._view_model_path(action, "value_path")
+        label_path = self._view_model_path(action, "label_path")
+        data = payload if isinstance(payload, Mapping) else {}
+        value = self._value_at_path(data, value_path) if value_path and isinstance(data, Mapping) else None
+        label = self._value_at_path(data, label_path) if label_path and isinstance(data, Mapping) else None
+        trend_rows = self._list_from_config_path(payload, action, "data_path")
+        points = self._chart_points(action, trend_rows or [])
+        if value is None and points:
+            value = points[-1]["value"]
+        return {
+            "kind": "kpi_trend",
+            "title": self._action_title(action),
+            "status": self._status_label(status_code, payload),
+            "label": str(label or self._action_title(action)),
+            "value": self._display_value(value),
+            "trend": points,
+            "empty_message": "No KPI data available.",
+        }
+
+    def _table_chart_model(
+        self,
+        action: Mapping[str, Any],
+        payload: Any,
+        status_code: int,
+    ) -> dict[str, Any]:
+        rows = self._list_from_config_path(payload, action, "table_rows_path")
+        if rows is None:
+            rows = self._list_from_config_path(payload, action, "rows_path")
+        if rows is None and isinstance(payload, list):
+            rows = payload
+        if rows is None and isinstance(payload, Mapping):
+            rows = self._find_list_value(payload)
+        table = self._datagrid_model(action, rows or [], status_code, envelope=payload if isinstance(payload, Mapping) else None)
+        table_columns = self._list_from_config_path(payload, action, "table_columns_path")
+        if table_columns and all(isinstance(column, Mapping) for column in table_columns):
+            table["columns"] = [
+                {
+                    "key": str(column.get("key") or ""),
+                    "label": str(column.get("label") or column.get("key") or ""),
+                }
+                for column in table_columns
+                if str(column.get("key") or "")
+            ]
+        chart = self._chart_model(action, payload, status_code)
+        return {
+            "kind": "table_chart",
+            "title": self._action_title(action),
+            "status": self._status_label(status_code, payload),
+            "chart": chart,
+            "table": table,
+            "empty_message": "No table/chart data available.",
+        }
+
+    def _host_slot_model(
+        self,
+        action: Mapping[str, Any],
+        payload: Any,
+        status_code: int,
+    ) -> dict[str, Any]:
+        config = action.get("view_model") if isinstance(action.get("view_model"), Mapping) else {}
+        partial_path = str(config.get("partial_path") or "").strip()
+        partial_html = ""
+        if partial_path and isinstance(payload, Mapping):
+            partial_value = self._value_at_path(payload, partial_path)
+            partial_html = str(partial_value or "")
+        elif isinstance(payload, Mapping):
+            for key in ("partial_html", "html", "markup", "rendered", "content"):
+                value = payload.get(key)
+                if isinstance(value, str) and self._looks_like_html(value):
+                    partial_html = value
+                    break
+        return {
+            "kind": "host_slot",
+            "renderer": str(config.get("renderer") or "host-slot"),
+            "title": self._action_title(action),
+            "status": self._status_label(status_code, payload),
+            "slot_key": str(config.get("slot_key") or action.get("key") or ""),
+            "partial_html": partial_html,
+            "fallback_message": str(config.get("fallback_message") or "Host slot content is controlled by the host application."),
+        }
+
+    def _custom_model(
+        self,
+        action: Mapping[str, Any],
+        payload: Any,
+        status_code: int,
+    ) -> dict[str, Any]:
+        config = action.get("view_model") if isinstance(action.get("view_model"), Mapping) else {}
+        return {
+            "kind": "custom",
+            "renderer": str(config.get("renderer") or ""),
+            "title": self._action_title(action),
+            "status": self._status_label(status_code, payload),
+            "payload": copy.deepcopy(payload),
+            "fallback_message": str(config.get("fallback_message") or "No renderer is registered for this custom view."),
+        }
+
+    def _list_from_config_path(
+        self,
+        payload: Any,
+        action: Mapping[str, Any],
+        key: str,
+    ) -> list[Any] | None:
+        path = self._view_model_path(action, key)
+        if not path or not isinstance(payload, Mapping):
+            return None
+        value = self._value_at_path(payload, path)
+        return value if isinstance(value, list) else None
+
+    def _chart_points(self, action: Mapping[str, Any], rows: Sequence[Any]) -> list[dict[str, Any]]:
+        x_path = self._view_model_path(action, "x_path")
+        y_path = self._view_model_path(action, "y_path")
+        label_path = self._view_model_path(action, "label_path")
+        value_path = self._view_model_path(action, "value_path")
+        points: list[dict[str, Any]] = []
+        for index, row in enumerate(rows):
+            if isinstance(row, Mapping):
+                label = self._value_at_path(row, x_path or label_path) if (x_path or label_path) else None
+                value = self._value_at_path(row, y_path or value_path) if (y_path or value_path) else None
+                if label is None:
+                    label = row.get("label") or row.get("date") or row.get("name") or row.get("x") or index + 1
+                if value is None:
+                    value = row.get("value") or row.get("y") or row.get("count") or row.get("total")
+            else:
+                label = index + 1
+                value = row
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError):
+                continue
+            points.append(
+                {
+                    "label": str(label),
+                    "value": numeric_value,
+                }
+            )
+        return points
 
     def _columns_for_rows(self, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
         keys: list[str] = []

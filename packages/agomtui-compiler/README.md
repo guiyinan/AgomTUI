@@ -175,11 +175,15 @@ Rules:
 - `candidate_payload` must be one JSON object
 - the object must already match the AgomTUI schema contract
 - prefer host-agnostic runtime structure over product-specific page choreography
+- prefer `chart`, `kpi_trend`, or `table_chart` view models when evidence clearly describes trends, proportions, KPIs, or table-plus-chart analysis
+- represent ECharts, CodeMirror, Mermaid, HTMX, or similar rich UI through `view_model.renderer` or `host_slot`; do not make those libraries mandatory runtime dependencies
+- use `host_slot` only for controlled host-rendered fragments that the host adapter explicitly supports
+- do not emit arbitrary HTML as metadata
 - only emit workflow steps, business narratives, or screen groupings when they are grounded in collected evidence
 - the compiler will validate and compact it before publish
 - runtime must only consume the published artifact, never raw skill output
 
-In this repository, `examples/metadata/` shows the baseline generic shape for the skill contract. The richer `demo/fixtures/` examples are intentionally demo-specific and should not be treated as the default extraction target for other hosts.
+In this repository, `examples/metadata/minimal.*` shows the baseline generic shape for the skill contract, and `examples/metadata/rich_components.*` shows chart / table-chart / host-slot metadata. The richer `demo/fixtures/` examples are intentionally demo-specific and should not be treated as the default extraction target for other hosts.
 
 ## Why this package exists
 

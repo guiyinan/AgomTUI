@@ -4,7 +4,98 @@
 
 **把后端 API 和业务逻辑直接变成可用的前端操作台 TUI。**
 
-Generate a usable TUI operations workbench directly from backend APIs and business logic, instead of hand-building the whole frontend console from scratch.
+AgomTUI is for system developers who already have backend APIs but still need an internal operations UI. It turns API and business evidence into metadata, then turns that metadata into a working frontend console.
+
+The goal is simple: generate useful internal-tool UI with near-zero frontend coding and much less integration pain.
+
+## What it does
+
+AgomTUI gives you a full path from backend capability to usable UI:
+
+1. Your existing API and business logic describe what the system can do.
+2. AgomTUI generates runtime metadata from that evidence.
+3. The browser runtime renders the UI from metadata.
+4. Operators get screens for lists, details, filters, actions, confirmations, and debugging without a custom frontend page for every workflow.
+
+The big value is not a single component library. It is a repeatable way to turn system capabilities into operator-facing tools.
+
+## What this means for developers
+
+- You keep your existing APIs and backend logic.
+- You do not rebuild tables, forms, detail views, action panels, and confirmation flows for every internal tool.
+- You can get a usable UI first, then refine metadata or host integration where the business really needs polish.
+- You can run it standalone or mount the same runtime inside an existing system.
+
+## How general is it?
+
+AgomTUI is broadly reusable for API-driven internal tools, not for every possible frontend.
+
+It works best when the product can be described as:
+
+- data lists, detail pages, filters, and search
+- operator actions with parameters and results
+- confirmation, permission, audit, and re-authentication rules
+- backend-owned business logic exposed through APIs or action executors
+
+That makes it a good fit for operations consoles, admin tools, risk-control workbenches, review systems, governance panels, and internal data management surfaces.
+
+It is less suitable as the primary UI system for consumer-facing product pages, marketing sites, visual editors, games, or highly bespoke interactive experiences. Those can still call the same APIs, but they usually need hand-designed frontend work instead of metadata-generated screens.
+
+## Can the UI be extended?
+
+Yes. AgomTUI should be treated as a generated baseline plus an extension system.
+
+The expected customization layers are:
+
+- metadata changes for screen names, grouping, ordering, field labels, and action placement
+- host adapters for auth, permissions, action execution, audit storage, and deployment shape
+- renderer extensions for new view types that are still metadata-driven
+- theme and shell customization for product identity and host embedding
+- manual override files for reviewed edits that must survive regeneration
+
+The main rule is to keep business logic in the host system and keep the UI driven by metadata where possible. If a change is useful across many tools, it belongs in the runtime or metadata contract. If it is only for one host, it belongs in that host adapter or metadata override.
+
+## Rich components and charts
+
+Yes, AgomTUI should support richer components such as ECharts, Chart.js, HTMX partials, Mermaid, Markdown renderers, date pickers, and code editors. They should be added through extension points rather than hard-coded into every generated screen.
+
+The classic AgomTradePro frontend already uses this pattern:
+
+- ECharts for macro timelines, filter dashboards, equity detail charts, portfolio allocation/performance, and public share performance curves
+- Chart.js for selected audit and valuation charts
+- HTMX for server-rendered partial refreshes and interactive panels
+- Flatpickr, SweetAlert2, and Alpine.js as lightweight page enhancers
+- Mermaid, Marked, and CodeMirror for diagrams, Markdown rendering, and script editing
+
+AgomTUI should carry that forward with three layers:
+
+- native metadata renderers for common charts such as line, bar, pie, KPI trend, and table-plus-chart views
+- custom renderer extensions for host-specific components, for example `renderer: "echarts"` or `renderer: "code-editor"`
+- host slots for controlled server-rendered fragments, including HTMX partials when the host application is already using HTMX
+
+HTMX is useful for host-mounted or server-rendered integrations, especially Django-style pages. For the standalone metadata runtime, the default path should still be API data plus runtime renderers. That keeps the core portable while allowing a host project to insert richer UI where metadata alone is not enough.
+
+## CI guardrails and development rules
+
+Yes, secondary development needs CI guardrails. Without them, a generated-UI framework can drift into one-off screens and lose its reuse value.
+
+Recommended guardrails:
+
+- validate every published metadata artifact against the schema
+- run compiler tests so API evidence still produces stable metadata
+- run runtime contract tests for governed actions, missing fields, confirmation, password challenge, and audit behavior
+- run adapter tests for each official host integration
+- block changes that bypass confirmation or audit for governed write actions
+- keep generated artifacts reproducible by using reviewed override files instead of hand-editing published metadata
+
+Recommended development rules:
+
+- prefer metadata and renderer extensions before custom page code
+- keep host-specific vocabulary, permissions, and execution logic out of the core runtime
+- add a contract test when changing metadata shape, action protocol, or adapter behavior
+- add visual or browser tests for new rich-component renderers such as charts, HTMX slots, code editors, or diagram renderers
+- treat the browser runtime as a shared shell, not a place for product-specific workflow logic
+- document new extension points before relying on them in a host project
 
 ## The problem it solves
 
@@ -12,10 +103,11 @@ Most internal tools stall in the same place:
 
 - the data API exists, but the usable operator UI does not
 - every new tool reimplements tables, detail views, filters, pagination, and action forms
+- system developers have to spend frontend time describing screens that already exist implicitly in their APIs
 - risky actions need confirmation and traceability, but those rules are rebuilt screen by screen
 - some teams want to launch it first as a standalone console, while others want to plug the same workbench into an existing Django or internal system
 
-AgomTUI is for that gap. It gives you a reviewed runtime shell for operations-heavy tools, plus a metadata path that lets one workbench drive many screens instead of rebuilding each page by hand.
+AgomTUI is for that gap. Instead of hand-coding each table, detail panel, filter, form, and confirmation dialog, you let generated metadata describe the UI and only customize where the host system really needs it.
 
 ## Good fit
 
@@ -51,9 +143,32 @@ With the demo alone, a user can immediately see:
 ## What you get
 
 - a terminal-style runtime shell that already has navigation, inspector, filters, paging, action forms, modal confirmation, and raw-response debugging
-- a metadata contract for defining screens and actions without rewriting the shell
-- a path for turning code-owned evidence into published runtime metadata
+- a metadata contract that lets generated metadata define screens and actions without rewriting the shell
+- a compiler path for turning APIs and code-owned evidence into published runtime metadata
 - a host-adapter model, so the same runtime can run standalone or under another application shell
+
+## How it works at a high level
+
+The technical path is intentionally small:
+
+1. collect API or code evidence from the host system
+2. compile it into AgomTUI runtime metadata
+3. serve that metadata to the runtime shell
+4. connect action execution, auth, and audit to the host system
+
+The frontend is generated from metadata; the host keeps control of business logic and execution.
+
+## Does it require Django or Python?
+
+No. The frontend runtime framework is the browser shell plus the AgomTUI metadata/action contract. It does not have to be based on Django, and the runtime UI does not require a Python backend.
+
+What is Python/Django in this repo:
+
+- Python is the current implementation language for the schema helpers, compiler skeleton, tests, and demo servers.
+- Django is the first host-adapter example because it is the first integration target.
+- A non-Django host can use the same runtime as long as it can serve metadata, execute actions, and return the AgomTUI response contracts.
+
+In other words: Django/Python are provided integration paths, not a frontend framework requirement. Future adapters can target FastAPI, Flask, Node services, Java services, or an OpenAPI-only backend.
 
 ## What is in this repo
 
@@ -70,6 +185,8 @@ With the demo alone, a user can immediately see:
 If you are evaluating whether this saves real work, the practical answer is:
 
 - you keep your APIs
+- you generate metadata from API/code evidence instead of hand-describing every screen
+- you get useful UI with little or no frontend coding for standard internal-tool workflows
 - you stop rebuilding the same operator UI primitives for every tool
 - you get one shell that can serve many internal workflows
 - you can start standalone and later mount into a host app without throwing the runtime away
