@@ -8,6 +8,14 @@ AgomTUI is for system developers who already have backend APIs but still need an
 
 The goal is simple: generate useful internal-tool UI with near-zero frontend coding and much less integration pain.
 
+## Documentation
+
+- [Development docs](docs/README.md)
+- [Architecture notes](docs/architecture/README.md)
+- [Development standards](docs/development/development-standards.md)
+- [Testing](docs/development/testing.md)
+- [CI guardrails](docs/development/ci-guardrails.md)
+
 ## What it does
 
 AgomTUI gives you a full path from backend capability to usable UI:
@@ -75,27 +83,9 @@ AgomTUI should carry that forward with three layers:
 
 HTMX is useful for host-mounted or server-rendered integrations, especially Django-style pages. For the standalone metadata runtime, the default path should still be API data plus runtime renderers. That keeps the core portable while allowing a host project to insert richer UI where metadata alone is not enough.
 
-## CI guardrails and development rules
+## Development guardrails
 
-Yes, secondary development needs CI guardrails. Without them, a generated-UI framework can drift into one-off screens and lose its reuse value.
-
-Recommended guardrails:
-
-- validate every published metadata artifact against the schema
-- run compiler tests so API evidence still produces stable metadata
-- run runtime contract tests for governed actions, missing fields, confirmation, password challenge, and audit behavior
-- run adapter tests for each official host integration
-- block changes that bypass confirmation or audit for governed write actions
-- keep generated artifacts reproducible by using reviewed override files instead of hand-editing published metadata
-
-Recommended development rules:
-
-- prefer metadata and renderer extensions before custom page code
-- keep host-specific vocabulary, permissions, and execution logic out of the core runtime
-- add a contract test when changing metadata shape, action protocol, or adapter behavior
-- add visual or browser tests for new rich-component renderers such as charts, HTMX slots, code editors, or diagram renderers
-- treat the browser runtime as a shared shell, not a place for product-specific workflow logic
-- document new extension points before relying on them in a host project
+AgomTUI needs CI and development rules because its value depends on stable metadata, runtime contracts, governed actions, and adapter boundaries. The current standards live in [docs/development/development-standards.md](docs/development/development-standards.md), and the first CI gate is documented in [docs/development/ci-guardrails.md](docs/development/ci-guardrails.md).
 
 ## The problem it solves
 
@@ -178,7 +168,7 @@ In other words: Django/Python are provided integration paths, not a frontend fra
 - `demo/`: runnable standalone demo, compiler walkthrough, integration demo, and migration pages
 - `adapters/django/`: notes for the first host adapter
 - `examples/metadata/`: minimal metadata fixtures
-- `docs/`: extraction boundary, migration, and architecture notes
+- `docs/`: development docs, architecture notes, migration plan, and CI guardrails
 
 ## For builders
 
@@ -254,25 +244,7 @@ python demo\django_host\manage.py runserver 127.0.0.1:8030 --noreload
 
 ### 2. Run tests
 
-Compiler tests:
-
-```powershell
-$env:PYTHONPATH='D:\githv\AgomTUI\packages\agomtui-core\src;D:\githv\AgomTUI\packages\agomtui-compiler\src'
-python -m unittest discover packages\agomtui-compiler\tests
-```
-
-Core runtime tests:
-
-```powershell
-$env:PYTHONPATH='D:\githv\AgomTUI\packages\agomtui-core\src'
-python -m unittest discover packages\agomtui-core\tests
-```
-
-Django host tests:
-
-```powershell
-python demo\django_host\manage.py test django_host
-```
+The local test and metadata validation commands are maintained in [docs/development/testing.md](docs/development/testing.md). The same checks run in GitHub Actions as the first CI guardrail.
 
 ## Product boundary
 
@@ -331,6 +303,7 @@ The core audit schema covers actor, action key, masked params, timestamp, confir
 
 ## Start here
 
-- read `docs/product-split.md` for the extraction boundary
-- read `docs/compiler-architecture.md` for the compile-time architecture
+- read `docs/README.md` for the documentation map
+- read `docs/architecture/product-split.md` for the extraction boundary
+- read `docs/architecture/compiler-architecture.md` for the compile-time architecture
 - open `packages/agomtui-runtime/reference/tui_workbench.reference.html` for the current shell reference

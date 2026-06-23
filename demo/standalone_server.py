@@ -1518,8 +1518,9 @@ def migration_page() -> bytes:
         <h2>Repository docs to read next</h2>
         <ul>
           <li><code>README.md</code>: product boundary and package split.</li>
-          <li><code>docs/compiler-architecture.md</code>: collectors, synthesizer, validation, publisher.</li>
-          <li><code>docs/migration-plan.md</code>: extraction phases.</li>
+          <li><code>docs/README.md</code>: development documentation map.</li>
+          <li><code>docs/architecture/compiler-architecture.md</code>: collectors, synthesizer, validation, publisher.</li>
+          <li><code>docs/migration/migration-plan.md</code>: extraction phases.</li>
           <li><code>adapters/django/README.md</code>: first adapter scope.</li>
         </ul>
       </div>

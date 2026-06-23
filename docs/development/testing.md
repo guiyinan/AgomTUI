@@ -1,0 +1,57 @@
+# Testing
+
+本页记录第一版必须能在本地和 CI 中通过的校验命令。
+
+## 环境变量
+
+在仓库根目录设置包源码路径：
+
+```powershell
+$env:PYTHONPATH="$PWD\packages\agomtui-core\src;$PWD\packages\agomtui-compiler\src"
+```
+
+Linux / GitHub Actions 使用冒号分隔：
+
+```bash
+export PYTHONPATH="$PWD/packages/agomtui-core/src:$PWD/packages/agomtui-compiler/src"
+```
+
+## 单元测试
+
+Core runtime contract tests：
+
+```powershell
+python -m unittest discover packages\agomtui-core\tests
+```
+
+Compiler tests：
+
+```powershell
+python -m unittest discover packages\agomtui-compiler\tests
+```
+
+Django host tests：
+
+```powershell
+python demo\django_host\manage.py test django_host
+```
+
+## Metadata schema 校验
+
+Minimal metadata：
+
+```powershell
+python -m agomtui_compiler.cli validate-metadata --metadata-file examples\metadata\minimal.tui_operation_graph.json
+```
+
+Rich component metadata：
+
+```powershell
+python -m agomtui_compiler.cli validate-metadata --metadata-file examples\metadata\rich_components.tui_operation_graph.json
+```
+
+## 验收标准
+
+- core tests、compiler tests、Django host tests 全部通过。
+- `minimal` 和 `rich_components` 两个示例 metadata 都通过 schema 校验。
+- 修改 governance、schema、collector 或 adapter 行为时，测试应覆盖对应 contract。
