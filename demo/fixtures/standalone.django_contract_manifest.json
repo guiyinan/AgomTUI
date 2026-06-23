@@ -1,0 +1,113 @@
+{
+  "models": [
+    {
+      "app_label": "execution",
+      "model": "AccountPositionSummary",
+      "db_table": "execution_account_position_summary",
+      "fields": [
+        { "name": "account_id", "type": "CharField", "null": false, "blank": false },
+        { "name": "account_name", "type": "CharField", "null": false, "blank": false },
+        { "name": "nav", "type": "DecimalField", "null": false, "blank": false },
+        {
+          "name": "risk_level",
+          "type": "CharField",
+          "null": false,
+          "blank": false,
+          "choices": [
+            { "value": "low", "label": "Low" },
+            { "value": "medium", "label": "Medium" },
+            { "value": "high", "label": "High" }
+          ]
+        },
+        { "name": "owner", "type": "CharField", "null": false, "blank": false },
+        { "name": "updated_at", "type": "DateTimeField", "null": false, "blank": false }
+      ]
+    },
+    {
+      "app_label": "execution",
+      "model": "ExecutionTask",
+      "db_table": "execution_task",
+      "fields": [
+        { "name": "task_id", "type": "CharField", "null": false, "blank": false },
+        { "name": "task_type", "type": "CharField", "null": false, "blank": false },
+        { "name": "status", "type": "CharField", "null": false, "blank": false },
+        { "name": "owner", "type": "CharField", "null": false, "blank": false },
+        { "name": "updated_at", "type": "DateTimeField", "null": false, "blank": false }
+      ]
+    },
+    {
+      "app_label": "research",
+      "model": "MacroRegimeSnapshot",
+      "db_table": "research_macro_regime_snapshot",
+      "fields": [
+        { "name": "current_regime", "type": "CharField", "null": false, "blank": false },
+        { "name": "confidence", "type": "CharField", "null": false, "blank": false },
+        { "name": "trend", "type": "CharField", "null": false, "blank": false },
+        { "name": "warning", "type": "TextField", "null": true, "blank": true }
+      ]
+    }
+  ],
+  "aggregates": [
+    {
+      "key": "account-workbench",
+      "entity": "AccountWorkbenchAggregate",
+      "fields": [
+        { "name": "account_id", "value_type": "string", "required": true },
+        { "name": "account_name", "value_type": "string", "required": true },
+        { "name": "risk_level", "value_type": "string", "required": true }
+      ],
+      "commands": [
+        {
+          "key": "execution.accounts.rebalance",
+          "method": "POST",
+          "endpoint": "/api/demo/accounts/rebalance/",
+          "fields": [
+            { "name": "account_id", "value_type": "string", "required": true },
+            { "name": "target_weight", "value_type": "float", "required": true },
+            { "name": "note", "value_type": "string", "required": false }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "task-queue",
+      "entity": "ExecutionTaskAggregate",
+      "fields": [
+        { "name": "task_id", "value_type": "string", "required": true },
+        { "name": "task_type", "value_type": "string", "required": true },
+        { "name": "status", "value_type": "string", "required": true }
+      ],
+      "commands": [
+        {
+          "key": "execution.tasks.retry",
+          "method": "POST",
+          "endpoint": "/api/demo/tasks/retry/",
+          "fields": [
+            { "name": "task_id", "value_type": "string", "required": true },
+            { "name": "reason", "value_type": "string", "required": false }
+          ]
+        },
+        {
+          "key": "execution.tasks.ai-brief",
+          "method": "POST",
+          "endpoint": "/api/demo/tasks/ai-brief/",
+          "risk": "ai",
+          "fields": [
+            { "name": "task_id", "value_type": "string", "required": true }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "regime-board",
+      "entity": "MacroRegimeBoardAggregate",
+      "fields": [
+        { "name": "current_regime", "value_type": "string", "required": true },
+        { "name": "confidence", "value_type": "string", "required": true },
+        { "name": "trend", "value_type": "string", "required": true },
+        { "name": "warning", "value_type": "string", "required": false }
+      ],
+      "commands": []
+    }
+  ]
+}

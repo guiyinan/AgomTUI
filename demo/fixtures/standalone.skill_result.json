@@ -1,0 +1,330 @@
+{
+  "candidate_payload": {
+    "schema_version": "tui-metadata.v3",
+    "version": "agomtui-demo.v1",
+    "registry_key": "demo",
+    "default_screen": "command-center.overview",
+    "interaction_model": "published-metadata-to-pc-tools",
+    "groups": [
+      { "key": "control", "label": "Control Center" },
+      { "key": "operations", "label": "Operations" },
+      { "key": "research", "label": "Research" }
+    ],
+    "modules": [
+      {
+        "key": "command-center",
+        "label": "Command Center",
+        "group": "control",
+        "summary": "Cross-workspace operational overview."
+      },
+      {
+        "key": "execution",
+        "label": "Execution",
+        "group": "operations",
+        "summary": "Account and task execution workspaces."
+      },
+      {
+        "key": "macro-regime",
+        "label": "Macro Regime",
+        "group": "research",
+        "summary": "Macro assessment and watchpoints."
+      }
+    ],
+    "screens": [
+      {
+        "key": "command-center.overview",
+        "label": "Overview",
+        "module_key": "command-center",
+        "group": "control",
+        "summary": "Published metadata drives the shell while adapters provide live business data to each dashboard panel.",
+        "view_type": "status",
+        "business_context": {
+          "objective": "Open the product without the original business system and still present a believable operator workbench.",
+          "decision_output": "Operator sees platform posture, account pressure, and execution queue health in one place."
+        },
+        "workflow": {
+          "name": "Standalone Product Tour",
+          "step": 1,
+          "total": 4,
+          "label": "Observe the published shell and navigate into execution workspaces.",
+          "next": {
+            "key": "execution.accounts",
+            "label": "Open accounts workspace"
+          }
+        },
+        "dashboard_panels": [
+          {
+            "key": "regime-status",
+            "title": "Regime Snapshot",
+            "kind": "regime_quadrant",
+            "action_key": "command-center.regime-status",
+            "layout_area": "regime"
+          },
+          {
+            "key": "account-positions",
+            "title": "Account Pressure",
+            "kind": "datagrid",
+            "action_key": "command-center.account-positions",
+            "layout_area": "account",
+            "columns": [
+              { "key": "account_name", "label": "Account" },
+              { "key": "risk_level", "label": "Risk" },
+              { "key": "status", "label": "Status" }
+            ]
+          },
+          {
+            "key": "task-monitor",
+            "title": "Task Queue",
+            "kind": "datagrid",
+            "action_key": "command-center.task-monitor",
+            "layout_area": "tasks",
+            "columns": [
+              { "key": "task_id", "label": "Task" },
+              { "key": "status", "label": "Status" },
+              { "key": "owner", "label": "Owner" }
+            ]
+          }
+        ]
+      },
+      {
+        "key": "execution.accounts",
+        "label": "Accounts",
+        "module_key": "execution",
+        "group": "operations",
+        "summary": "Inspect account pressure, drill into one account, and submit a governed rebalance request.",
+        "view_type": "datagrid",
+        "default_action_key": "execution.accounts.list"
+      },
+      {
+        "key": "execution.tasks",
+        "label": "Tasks",
+        "module_key": "execution",
+        "group": "operations",
+        "summary": "Inspect queue state, retry blocked work, and ask for an AI brief without wiring in a real model backend.",
+        "view_type": "queue_workbench",
+        "default_action_key": "execution.tasks.queue"
+      },
+      {
+        "key": "macro-regime.overview",
+        "label": "Regime",
+        "module_key": "macro-regime",
+        "group": "research",
+        "summary": "Show a narrative readout that explains what the dashboard regime panel means.",
+        "view_type": "detail",
+        "default_action_key": "macro-regime.snapshot"
+      }
+    ],
+    "actions": [
+      {
+        "key": "command-center.regime-status",
+        "label": "Regime Snapshot",
+        "method": "GET",
+        "endpoint": "/api/demo/regime/current/",
+        "intent": "read_regime_snapshot",
+        "screen_key": "command-center.overview",
+        "module_key": "command-center",
+        "view_type": "detail",
+        "risk": "read",
+        "task_tier": "support",
+        "task_group": "00 Dashboard",
+        "sequence": 1,
+        "source": "approved:demo"
+      },
+      {
+        "key": "command-center.account-positions",
+        "label": "Account Pressure",
+        "method": "GET",
+        "endpoint": "/api/demo/accounts/",
+        "intent": "read_account_pressure",
+        "screen_key": "command-center.overview",
+        "module_key": "command-center",
+        "view_type": "datagrid",
+        "risk": "read",
+        "task_tier": "support",
+        "task_group": "00 Dashboard",
+        "sequence": 2,
+        "source": "approved:demo"
+      },
+      {
+        "key": "command-center.task-monitor",
+        "label": "Task Queue",
+        "method": "GET",
+        "endpoint": "/api/demo/tasks/",
+        "intent": "read_task_queue",
+        "screen_key": "command-center.overview",
+        "module_key": "command-center",
+        "view_type": "datagrid",
+        "risk": "read",
+        "task_tier": "support",
+        "task_group": "00 Dashboard",
+        "sequence": 3,
+        "source": "approved:demo"
+      },
+      {
+        "key": "execution.accounts.list",
+        "label": "Open Account Grid",
+        "method": "GET",
+        "endpoint": "/api/demo/accounts/",
+        "intent": "read_account_summary",
+        "screen_key": "execution.accounts",
+        "module_key": "execution",
+        "view_type": "datagrid",
+        "risk": "read",
+        "task_tier": "primary",
+        "task_group": "01 Core Review",
+        "sequence": 10,
+        "source": "approved:demo"
+      },
+      {
+        "key": "execution.accounts.detail",
+        "label": "Inspect Account",
+        "method": "GET",
+        "endpoint": "/api/demo/accounts/{account_id}/",
+        "intent": "read_account_detail",
+        "screen_key": "execution.accounts",
+        "module_key": "execution",
+        "view_type": "detail",
+        "risk": "read",
+        "task_tier": "primary",
+        "task_group": "01 Core Review",
+        "sequence": 20,
+        "fields": [
+          {
+            "key": "account_id",
+            "label": "Account ID",
+            "input_type": "text",
+            "value_type": "string",
+            "required": true,
+            "binding": "path",
+            "placeholder": "ACC-1001"
+          }
+        ],
+        "source": "approved:demo"
+      },
+      {
+        "key": "execution.accounts.rebalance",
+        "label": "Submit Rebalance",
+        "method": "POST",
+        "endpoint": "/api/demo/accounts/rebalance/",
+        "intent": "submit_account_rebalance",
+        "screen_key": "execution.accounts",
+        "module_key": "execution",
+        "view_type": "message",
+        "risk": "write",
+        "task_tier": "operation",
+        "task_group": "00 Governed Actions",
+        "sequence": 30,
+        "fields": [
+          {
+            "key": "account_id",
+            "label": "Account ID",
+            "input_type": "text",
+            "value_type": "string",
+            "required": true,
+            "binding": "body",
+            "placeholder": "ACC-1001"
+          },
+          {
+            "key": "target_weight",
+            "label": "Target Weight %",
+            "input_type": "number",
+            "value_type": "float",
+            "required": true,
+            "binding": "body",
+            "placeholder": "35"
+          }
+        ],
+        "source": "approved:demo"
+      },
+      {
+        "key": "execution.tasks.queue",
+        "label": "Open Task Queue",
+        "method": "GET",
+        "endpoint": "/api/demo/tasks/",
+        "intent": "read_task_queue",
+        "screen_key": "execution.tasks",
+        "module_key": "execution",
+        "view_type": "datagrid",
+        "risk": "read",
+        "task_tier": "primary",
+        "task_group": "01 Queue Review",
+        "sequence": 10,
+        "source": "approved:demo"
+      },
+      {
+        "key": "execution.tasks.retry",
+        "label": "Retry Task",
+        "method": "POST",
+        "endpoint": "/api/demo/tasks/retry/",
+        "intent": "retry_task",
+        "screen_key": "execution.tasks",
+        "module_key": "execution",
+        "view_type": "message",
+        "risk": "write",
+        "task_tier": "operation",
+        "task_group": "00 Governed Actions",
+        "sequence": 30,
+        "fields": [
+          {
+            "key": "task_id",
+            "label": "Task ID",
+            "input_type": "text",
+            "value_type": "string",
+            "required": true,
+            "binding": "body",
+            "placeholder": "TASK-002"
+          }
+        ],
+        "source": "approved:demo"
+      },
+      {
+        "key": "execution.tasks.ai-brief",
+        "label": "Generate AI Brief",
+        "method": "POST",
+        "endpoint": "/api/demo/tasks/ai-brief/",
+        "intent": "generate_task_brief",
+        "screen_key": "execution.tasks",
+        "module_key": "execution",
+        "view_type": "message",
+        "risk": "ai",
+        "task_tier": "operation",
+        "task_group": "00 Governed Actions",
+        "sequence": 40,
+        "fields": [
+          {
+            "key": "task_id",
+            "label": "Task ID",
+            "input_type": "text",
+            "value_type": "string",
+            "required": true,
+            "binding": "body",
+            "placeholder": "TASK-002"
+          }
+        ],
+        "source": "approved:demo"
+      },
+      {
+        "key": "macro-regime.snapshot",
+        "label": "Explain Regime",
+        "method": "GET",
+        "endpoint": "/api/demo/regime/current/",
+        "intent": "read_regime_detail",
+        "screen_key": "macro-regime.overview",
+        "module_key": "macro-regime",
+        "view_type": "detail",
+        "risk": "read",
+        "task_tier": "primary",
+        "task_group": "01 Narrative View",
+        "sequence": 10,
+        "source": "approved:demo"
+      }
+    ],
+    "principles": [
+      "Runtime reads published metadata only.",
+      "Standalone demo uses the same runtime shell and adapter contract as the real host integration.",
+      "Compiler output remains a reviewed artifact, not a live runtime mutation."
+    ]
+  },
+  "model_name": "standalone-demo-skill",
+  "reasoning_note": "Demo skill output produced from OpenAPI and Django contract evidence for the standalone workbench."
+}

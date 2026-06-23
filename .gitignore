@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+.mypy_cache/
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+.DS_Store
+Thumbs.db
+.tmp_sync/
+sync/agomtradepro/runtime-shell.config.json
+tmp_*.log

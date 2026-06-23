@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "source_type": "openapi",
+      "source_ref": "example:/api/tui-example/status/",
+      "summary": "Read-only status endpoint with no required parameters.",
+      "payload": {
+        "endpoint": "/api/tui-example/status/",
+        "method": "GET",
+        "risk": "read",
+        "response_shape": "detail"
+      }
+    },
+    {
+      "source_type": "django-model",
+      "source_ref": "example:SystemStatus",
+      "summary": "Status model exposes component, status, checked_at, and message fields.",
+      "payload": {
+        "fields": [
+          {"key": "component", "value_type": "string"},
+          {"key": "status", "value_type": "string"},
+          {"key": "checked_at", "value_type": "datetime"},
+          {"key": "message", "value_type": "string"}
+        ]
+      }
+    }
+  ]
+}

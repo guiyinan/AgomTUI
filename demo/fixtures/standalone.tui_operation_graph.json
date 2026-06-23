@@ -1,0 +1,496 @@
+{
+  "schema_version": "tui-metadata.v3",
+  "version": "agomtui-demo.v1",
+  "registry_key": "demo",
+  "default_screen": "command-center.overview",
+  "interaction_model": "published-metadata-to-pc-tools",
+  "groups": [
+    { "key": "control", "label": "Control Center" },
+    { "key": "operations", "label": "Operations" },
+    { "key": "research", "label": "Research" }
+  ],
+  "modules": [
+    {
+      "key": "command-center",
+      "label": "Command Center",
+      "group": "control",
+      "summary": "Cross-workspace operational overview."
+    },
+    {
+      "key": "execution",
+      "label": "Execution",
+      "group": "operations",
+      "summary": "Account and task execution workspaces."
+    },
+    {
+      "key": "macro-regime",
+      "label": "Macro Regime",
+      "group": "research",
+      "summary": "Macro assessment and watchpoints."
+    }
+  ],
+  "screens": [
+    {
+      "key": "command-center.overview",
+      "label": "Overview",
+      "module_key": "command-center",
+      "group": "control",
+      "summary": "Published metadata drives the shell while adapters provide live business data to each dashboard panel.",
+      "view_type": "status",
+      "business_context": {
+        "objective": "Open the product without the original business system and still present a believable operator workbench.",
+        "decision_output": "Operator sees platform posture, account pressure, and execution queue health in one place.",
+        "checkpoints": [
+          "Dashboard panels must render without host business dependencies.",
+          "The same metadata contract must still map back to real host adapters."
+        ]
+      },
+      "workflow": {
+        "name": "Standalone Product Tour",
+        "step": 1,
+        "total": 4,
+        "label": "Observe the published shell and navigate into execution workspaces.",
+        "next": {
+          "key": "execution.accounts",
+          "label": "Open accounts workspace"
+        }
+      },
+      "dashboard_panels": [
+        {
+          "key": "regime-status",
+          "title": "Regime Snapshot",
+          "kind": "regime_quadrant",
+          "action_key": "command-center.regime-status",
+          "layout_area": "regime",
+          "note": "Panel fed through the same action-runner contract as the rest of the workbench."
+        },
+        {
+          "key": "account-positions",
+          "title": "Account Pressure",
+          "kind": "datagrid",
+          "action_key": "command-center.account-positions",
+          "layout_area": "account",
+          "columns": [
+            { "key": "account_name", "label": "Account" },
+            { "key": "risk_level", "label": "Risk" },
+            { "key": "status", "label": "Status" }
+          ]
+        },
+        {
+          "key": "task-monitor",
+          "title": "Task Queue",
+          "kind": "datagrid",
+          "action_key": "command-center.task-monitor",
+          "layout_area": "tasks",
+          "columns": [
+            { "key": "task_id", "label": "Task" },
+            { "key": "status", "label": "Status" },
+            { "key": "owner", "label": "Owner" }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "execution.accounts",
+      "label": "Accounts",
+      "module_key": "execution",
+      "group": "operations",
+      "summary": "Inspect account pressure, drill into one account, and submit a governed rebalance request.",
+      "view_type": "datagrid",
+      "default_action_key": "execution.accounts.list",
+      "business_context": {
+        "objective": "Triage account risk and route one corrective action through a confirmed operation.",
+        "decision_output": "Operator confirms which account needs action and what target weight to submit.",
+        "checkpoints": [
+          "Default action opens a paged datagrid.",
+          "Selected row can prefill downstream actions.",
+          "Write action requires confirmation."
+        ]
+      },
+      "workflow": {
+        "name": "Standalone Product Tour",
+        "step": 2,
+        "total": 4,
+        "label": "Review accounts and test one governed write path.",
+        "previous": {
+          "key": "command-center.overview",
+          "label": "Return to overview"
+        },
+        "next": {
+          "key": "execution.tasks",
+          "label": "Open task queue"
+        }
+      }
+    },
+    {
+      "key": "execution.tasks",
+      "label": "Tasks",
+      "module_key": "execution",
+      "group": "operations",
+      "summary": "Inspect queue state, retry blocked work, and ask for an AI brief without wiring in a real model backend.",
+      "view_type": "queue_workbench",
+      "default_action_key": "execution.tasks.queue",
+      "business_context": {
+        "objective": "Demonstrate read, write, and AI-style actions through the same runtime contract.",
+        "decision_output": "Operator decides whether to retry, escalate, or brief a task.",
+        "checkpoints": [
+          "Queue must return structured table rows.",
+          "Retry path must enforce confirmation.",
+          "AI brief path must render a message view."
+        ]
+      },
+      "workflow": {
+        "name": "Standalone Product Tour",
+        "step": 3,
+        "total": 4,
+        "label": "Move from queue inspection to guided action choices.",
+        "previous": {
+          "key": "execution.accounts",
+          "label": "Back to accounts"
+        },
+        "next": {
+          "key": "macro-regime.overview",
+          "label": "Open regime view"
+        }
+      }
+    },
+    {
+      "key": "macro-regime.overview",
+      "label": "Regime",
+      "module_key": "macro-regime",
+      "group": "research",
+      "summary": "Show a narrative readout that explains what the dashboard regime panel means.",
+      "view_type": "detail",
+      "default_action_key": "macro-regime.snapshot",
+      "business_context": {
+        "objective": "Translate compact panel evidence into a richer explanation page.",
+        "decision_output": "Operator sees why the shell routes the same underlying metadata into multiple surfaces."
+      },
+      "workflow": {
+        "name": "Standalone Product Tour",
+        "step": 4,
+        "total": 4,
+        "label": "Finish the tour with an explanatory detail view.",
+        "previous": {
+          "key": "execution.tasks",
+          "label": "Back to task queue"
+        }
+      }
+    }
+  ],
+  "actions": [
+    {
+      "key": "command-center.regime-status",
+      "label": "Regime Snapshot",
+      "method": "GET",
+      "endpoint": "/api/demo/regime/current/",
+      "intent": "read_regime_snapshot",
+      "screen_key": "command-center.overview",
+      "module_key": "command-center",
+      "view_type": "detail",
+      "risk": "read",
+      "task_tier": "support",
+      "task_group": "00 Dashboard",
+      "sequence": 1,
+      "description": "Read the current regime classification for the dashboard.",
+      "source": "approved:demo"
+    },
+    {
+      "key": "command-center.account-positions",
+      "label": "Account Pressure",
+      "method": "GET",
+      "endpoint": "/api/demo/accounts/",
+      "intent": "read_account_pressure",
+      "screen_key": "command-center.overview",
+      "module_key": "command-center",
+      "view_type": "datagrid",
+      "risk": "read",
+      "task_tier": "support",
+      "task_group": "00 Dashboard",
+      "sequence": 2,
+      "description": "Read the top accounts that need operator review.",
+      "source": "approved:demo"
+    },
+    {
+      "key": "command-center.task-monitor",
+      "label": "Task Queue",
+      "method": "GET",
+      "endpoint": "/api/demo/tasks/",
+      "intent": "read_task_queue",
+      "screen_key": "command-center.overview",
+      "module_key": "command-center",
+      "view_type": "datagrid",
+      "risk": "read",
+      "task_tier": "support",
+      "task_group": "00 Dashboard",
+      "sequence": 3,
+      "description": "Read queue health for the home dashboard.",
+      "source": "approved:demo"
+    },
+    {
+      "key": "execution.accounts.list",
+      "label": "Open Account Grid",
+      "method": "GET",
+      "endpoint": "/api/demo/accounts/",
+      "intent": "read_account_summary",
+      "screen_key": "execution.accounts",
+      "module_key": "execution",
+      "view_type": "datagrid",
+      "risk": "read",
+      "task_tier": "primary",
+      "task_group": "01 Core Review",
+      "sequence": 10,
+      "description": "Open the default account summary view with paging and selected-row follow-up actions.",
+      "source": "approved:demo"
+    },
+    {
+      "key": "execution.accounts.detail",
+      "label": "Inspect Account",
+      "method": "GET",
+      "endpoint": "/api/demo/accounts/{account_id}/",
+      "intent": "read_account_detail",
+      "screen_key": "execution.accounts",
+      "module_key": "execution",
+      "view_type": "detail",
+      "risk": "read",
+      "task_tier": "primary",
+      "task_group": "01 Core Review",
+      "sequence": 20,
+      "description": "Open one account detail view using the selected row or a typed account ID.",
+      "fields": [
+        {
+          "key": "account_id",
+          "label": "Account ID",
+          "input_type": "text",
+          "value_type": "string",
+          "required": true,
+          "binding": "path",
+          "placeholder": "ACC-1001"
+        }
+      ],
+      "source": "approved:demo"
+    },
+    {
+      "key": "execution.accounts.rebalance",
+      "label": "Submit Rebalance",
+      "method": "POST",
+      "endpoint": "/api/demo/accounts/rebalance/",
+      "intent": "submit_account_rebalance",
+      "screen_key": "execution.accounts",
+      "module_key": "execution",
+      "view_type": "message",
+      "risk": "write",
+      "task_tier": "operation",
+      "task_group": "00 Governed Actions",
+      "sequence": 30,
+      "confirmation_required": true,
+      "description": "Submit one governed rebalance request after confirming the target weight.",
+      "fields": [
+        {
+          "key": "account_id",
+          "label": "Account ID",
+          "input_type": "text",
+          "value_type": "string",
+          "required": true,
+          "binding": "body",
+          "placeholder": "ACC-1001"
+        },
+        {
+          "key": "target_weight",
+          "label": "Target Weight %",
+          "input_type": "number",
+          "value_type": "float",
+          "required": true,
+          "binding": "body",
+          "placeholder": "35"
+        },
+        {
+          "key": "note",
+          "label": "Operator Note",
+          "input_type": "textarea",
+          "value_type": "string",
+          "required": false,
+          "binding": "body",
+          "placeholder": "Reason for rebalance request"
+        }
+      ],
+      "source": "approved:demo"
+    },
+    {
+      "key": "param.execution.accounts.filter-risk",
+      "label": "Filter By Risk",
+      "method": "GET",
+      "endpoint": "/api/demo/accounts/",
+      "intent": "query_accounts_by_risk",
+      "screen_key": "execution.accounts",
+      "module_key": "execution",
+      "view_type": "datagrid",
+      "risk": "read",
+      "task_group": "高级条件查询",
+      "sequence": 40,
+      "description": "Query the same account grid with a narrowed risk filter.",
+      "fields": [
+        {
+          "key": "risk_level",
+          "label": "Risk Level",
+          "input_type": "select",
+          "value_type": "string",
+          "required": true,
+          "binding": "query",
+          "default": "high",
+          "options": [
+            { "value": "all", "label": "All" },
+            { "value": "low", "label": "Low" },
+            { "value": "medium", "label": "Medium" },
+            { "value": "high", "label": "High" }
+          ]
+        }
+      ],
+      "source": "approved:demo"
+    },
+    {
+      "key": "execution.tasks.queue",
+      "label": "Open Task Queue",
+      "method": "GET",
+      "endpoint": "/api/demo/tasks/",
+      "intent": "read_task_queue",
+      "screen_key": "execution.tasks",
+      "module_key": "execution",
+      "view_type": "datagrid",
+      "risk": "read",
+      "task_tier": "primary",
+      "task_group": "01 Queue Review",
+      "sequence": 10,
+      "description": "Open the queue workbench with pagination and row-driven follow-up actions.",
+      "source": "approved:demo"
+    },
+    {
+      "key": "execution.tasks.detail",
+      "label": "Inspect Task",
+      "method": "GET",
+      "endpoint": "/api/demo/tasks/{task_id}/",
+      "intent": "read_task_detail",
+      "screen_key": "execution.tasks",
+      "module_key": "execution",
+      "view_type": "detail",
+      "risk": "read",
+      "task_tier": "support",
+      "task_group": "02 Inspection",
+      "sequence": 20,
+      "description": "Open one queue item in a detail view.",
+      "fields": [
+        {
+          "key": "task_id",
+          "label": "Task ID",
+          "input_type": "text",
+          "value_type": "string",
+          "required": true,
+          "binding": "path",
+          "placeholder": "TASK-002"
+        }
+      ],
+      "source": "approved:demo"
+    },
+    {
+      "key": "execution.tasks.retry",
+      "label": "Retry Task",
+      "method": "POST",
+      "endpoint": "/api/demo/tasks/retry/",
+      "intent": "retry_task",
+      "screen_key": "execution.tasks",
+      "module_key": "execution",
+      "view_type": "message",
+      "risk": "write",
+      "task_tier": "operation",
+      "task_group": "00 Governed Actions",
+      "sequence": 30,
+      "confirmation_required": true,
+      "description": "Retry one blocked task with an explicit operator confirmation step.",
+      "fields": [
+        {
+          "key": "task_id",
+          "label": "Task ID",
+          "input_type": "text",
+          "value_type": "string",
+          "required": true,
+          "binding": "body",
+          "placeholder": "TASK-002"
+        },
+        {
+          "key": "reason",
+          "label": "Retry Reason",
+          "input_type": "textarea",
+          "value_type": "string",
+          "required": false,
+          "binding": "body",
+          "placeholder": "Explain why this retry is safe"
+        }
+      ],
+      "source": "approved:demo"
+    },
+    {
+      "key": "execution.tasks.ai-brief",
+      "label": "Generate AI Brief",
+      "method": "POST",
+      "endpoint": "/api/demo/tasks/ai-brief/",
+      "intent": "generate_task_brief",
+      "screen_key": "execution.tasks",
+      "module_key": "execution",
+      "view_type": "message",
+      "risk": "ai",
+      "task_tier": "operation",
+      "task_group": "00 Governed Actions",
+      "sequence": 40,
+      "description": "Return a mock AI-style operator brief through the same action-runner response contract.",
+      "fields": [
+        {
+          "key": "task_id",
+          "label": "Task ID",
+          "input_type": "text",
+          "value_type": "string",
+          "required": true,
+          "binding": "body",
+          "placeholder": "TASK-002"
+        }
+      ],
+      "source": "approved:demo"
+    },
+    {
+      "key": "macro-regime.snapshot",
+      "label": "Explain Regime",
+      "method": "GET",
+      "endpoint": "/api/demo/regime/current/",
+      "intent": "read_regime_detail",
+      "screen_key": "macro-regime.overview",
+      "module_key": "macro-regime",
+      "view_type": "detail",
+      "risk": "read",
+      "task_tier": "primary",
+      "task_group": "01 Narrative View",
+      "sequence": 10,
+      "description": "Expand the compact dashboard signal into a richer explanation page.",
+      "source": "approved:demo"
+    },
+    {
+      "key": "macro-regime.watchpoints",
+      "label": "Watchpoints",
+      "method": "GET",
+      "endpoint": "/api/demo/regime/current/",
+      "intent": "read_regime_watchpoints",
+      "screen_key": "macro-regime.overview",
+      "module_key": "macro-regime",
+      "view_type": "message",
+      "risk": "read",
+      "task_tier": "support",
+      "task_group": "02 Commentary",
+      "sequence": 20,
+      "description": "Summarize what the current regime means for the operator.",
+      "source": "approved:demo"
+    }
+  ],
+  "principles": [
+    "Runtime reads published metadata only.",
+    "Standalone demo uses the same runtime shell and adapter contract as the real host integration.",
+    "Compiler output remains a reviewed artifact, not a live runtime mutation."
+  ]
+}

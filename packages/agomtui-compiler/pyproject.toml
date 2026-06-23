@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agomtui-compiler"
+version = "0.1.0"
+description = "Evidence-driven metadata compiler skeleton for AgomTUI"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "agomtui-core",
+]
+
+[project.scripts]
+agomtui-compile = "agomtui_compiler.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

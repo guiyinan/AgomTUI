@@ -1,0 +1,37 @@
+{
+  "models": [
+    {
+      "app_label": "terminal",
+      "model": "SystemStatus",
+      "db_table": "terminal_system_status",
+      "fields": [
+        {"name": "component", "type": "CharField", "null": false, "blank": false},
+        {"name": "status", "type": "CharField", "null": false, "blank": false},
+        {"name": "checked_at", "type": "DateTimeField", "null": false, "blank": false},
+        {"name": "message", "type": "TextField", "null": true, "blank": true}
+      ]
+    }
+  ],
+  "aggregates": [
+    {
+      "key": "status-board",
+      "entity": "SystemStatusAggregate",
+      "fields": [
+        {"name": "component", "value_type": "string", "required": true},
+        {"name": "status", "value_type": "string", "required": true},
+        {"name": "checked_at", "value_type": "datetime", "required": true}
+      ],
+      "commands": [
+        {
+          "key": "refresh-status",
+          "method": "POST",
+          "endpoint": "/api/tui-example/status/refresh/",
+          "risk": "write",
+          "fields": [
+            {"name": "component", "value_type": "string", "required": true}
+          ]
+        }
+      ]
+    }
+  ]
+}

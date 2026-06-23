@@ -1,0 +1,11 @@
+{
+  "source": {
+    "local_root": "D:/githv/agomTradePro",
+    "git_repo_root": "D:/githv/agomTradePro",
+    "source_ref": "HEAD",
+    "baseline_ref": "HEAD",
+    "remote_url": "",
+    "remote_fetch_ref": "dev/next-development",
+    "cache_dir": ".tmp_sync/agomtradepro-source"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "schema_version": "tui-metadata.v3",
+  "version": "agomtui-workbench.v0",
+  "registry_key": "default",
+  "default_screen": "overview.home",
+  "interaction_model": "published-metadata-to-pc-tools",
+  "groups": [
+    {"key": "workbench", "label": "Workbench"}
+  ],
+  "modules": [
+    {
+      "key": "overview",
+      "label": "Overview",
+      "group": "workbench",
+      "summary": "Top-level operator overview."
+    }
+  ],
+  "screens": [
+    {
+      "key": "overview.home",
+      "label": "Home",
+      "module_key": "overview",
+      "group": "workbench",
+      "summary": "Open the primary status view.",
+      "view_type": "status"
+    }
+  ],
+  "actions": [
+    {
+      "key": "overview.status",
+      "label": "System Status",
+      "endpoint": "/api/tui-example/status/",
+      "intent": "read_system_status",
+      "screen_key": "overview.home",
+      "view_type": "detail",
+      "risk": "read",
+      "source": "openapi:example"
+    }
+  ]
+}

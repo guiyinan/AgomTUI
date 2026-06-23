@@ -1,0 +1,34 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AgomTUI Example API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/tui-example/status/": {
+      "get": {
+        "summary": "Read current system status",
+        "operationId": "getSystemStatus",
+        "tags": ["tui-example"],
+        "responses": {
+          "200": {
+            "description": "Current status payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "component": {"type": "string"},
+                    "status": {"type": "string"},
+                    "checked_at": {"type": "string", "format": "date-time"},
+                    "message": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,295 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AgomTUI Standalone Demo API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/demo/regime/current/": {
+      "get": {
+        "summary": "Read current macro regime snapshot",
+        "operationId": "getCurrentRegime",
+        "tags": ["macro-regime"],
+        "responses": {
+          "200": {
+            "description": "Current regime detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "current_regime": { "type": "string" },
+                    "confidence": { "type": "string" },
+                    "trend": { "type": "string" },
+                    "warning": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/demo/accounts/": {
+      "get": {
+        "summary": "Read account position summary",
+        "operationId": "listAccounts",
+        "tags": ["execution-accounts"],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "risk_level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["all", "low", "medium", "high"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paged account summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rows": { "type": "array" },
+                    "page": { "type": "integer" },
+                    "total_rows": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/demo/accounts/{account_id}/": {
+      "get": {
+        "summary": "Read one account detail",
+        "operationId": "getAccountDetail",
+        "tags": ["execution-accounts"],
+        "parameters": [
+          {
+            "name": "account_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "account_id": { "type": "string" },
+                    "account_name": { "type": "string" },
+                    "nav": { "type": "number" },
+                    "cash_pct": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/demo/accounts/rebalance/": {
+      "post": {
+        "summary": "Submit account rebalance request",
+        "operationId": "rebalanceAccount",
+        "tags": ["execution-accounts"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["account_id", "target_weight"],
+                "properties": {
+                  "account_id": { "type": "string" },
+                  "target_weight": { "type": "number" },
+                  "note": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rebalance accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "request_id": { "type": "string" },
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/demo/tasks/": {
+      "get": {
+        "summary": "Read task queue",
+        "operationId": "listExecutionTasks",
+        "tags": ["execution-tasks"],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["all", "queued", "running", "blocked"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paged task queue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rows": { "type": "array" },
+                    "page": { "type": "integer" },
+                    "total_rows": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/demo/tasks/{task_id}/": {
+      "get": {
+        "summary": "Read one execution task",
+        "operationId": "getExecutionTask",
+        "tags": ["execution-tasks"],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task_id": { "type": "string" },
+                    "task_type": { "type": "string" },
+                    "status": { "type": "string" },
+                    "owner": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/demo/tasks/retry/": {
+      "post": {
+        "summary": "Retry one blocked task",
+        "operationId": "retryExecutionTask",
+        "tags": ["execution-tasks"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["task_id"],
+                "properties": {
+                  "task_id": { "type": "string" },
+                  "reason": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Retry accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task_id": { "type": "string" },
+                    "status": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/demo/tasks/ai-brief/": {
+      "post": {
+        "summary": "Generate AI operator brief",
+        "operationId": "generateTaskAiBrief",
+        "tags": ["execution-tasks"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["task_id"],
+                "properties": {
+                  "task_id": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "AI brief",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "summary": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

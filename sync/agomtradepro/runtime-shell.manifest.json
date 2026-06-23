@@ -1,0 +1,47 @@
+{
+  "sync_name": "agomtradepro-runtime-shell",
+  "upstream_project": "agomTradePro",
+  "git_source": {
+    "fallback_ref": "HEAD",
+    "baseline_ref": "HEAD",
+    "remote_url": "",
+    "remote_fetch_ref": "HEAD",
+    "cache_dir": ".tmp_sync/agomtradepro-source"
+  },
+  "boundary": {
+    "direction": "one-way",
+    "allowed_target_prefixes": [
+      "packages/agomtui-runtime/reference"
+    ],
+    "forbidden_product_areas": [
+      "packages/agomtui-core",
+      "packages/agomtui-compiler",
+      "adapters",
+      "demo",
+      "docs"
+    ]
+  },
+  "entries": [
+    {
+      "id": "runtime-html-reference",
+      "description": "Transform the Django host template into the standalone runtime reference HTML.",
+      "source": "core/templates/terminal/tui_workbench.html",
+      "target": "packages/agomtui-runtime/reference/tui_workbench.reference.html",
+      "transform": "django_template_to_reference_html"
+    },
+    {
+      "id": "runtime-css-reference",
+      "description": "Copy the upstream runtime shell stylesheet into the extracted runtime reference.",
+      "source": "static/css/tui-workbench.css",
+      "target": "packages/agomtui-runtime/reference/static/css/tui-workbench.css",
+      "transform": "copy"
+    },
+    {
+      "id": "runtime-js-reference",
+      "description": "Copy the upstream runtime shell script and patch the API base into a host-agnostic runtime hook.",
+      "source": "static/js/tui-workbench.js",
+      "target": "packages/agomtui-runtime/reference/static/js/tui-workbench.js",
+      "transform": "agomtradepro_runtime_js_to_reference"
+    }
+  ]
+}
