@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agomtui_core import compact_tui_metadata_payload, validate_tui_metadata
+from agomtui_core import apply_tui_metadata_overrides, compact_tui_metadata_payload, validate_tui_metadata
 
 from .collector import BaseCollector, CollectionContext, EvidenceBundle
 from .publisher import FileArtifactPublisher, PublishResult
@@ -52,6 +52,7 @@ class CompilerWorkflow:
         evidence_path: Path | None = None,
         registry_key: str = "default",
         generation_note: str = "",
+        metadata_overrides: list[dict[str, Any]] | None = None,
     ) -> CompilerWorkflowResult:
         evidence_bundle = self.collect(context)
         schema_text = schema_path.read_text(encoding="utf-8")
@@ -62,7 +63,10 @@ class CompilerWorkflow:
             generation_note=generation_note,
         )
         synthesis = self.synthesizer.synthesize(request)
-        validated = validate_tui_metadata(dict(synthesis.candidate_payload))
+        candidate_payload = dict(synthesis.candidate_payload)
+        for overrides in metadata_overrides or []:
+            candidate_payload = apply_tui_metadata_overrides(candidate_payload, overrides)
+        validated = validate_tui_metadata(candidate_payload)
         compacted = compact_tui_metadata_payload(validated)
         evidence_payload = {
             "version": validated["version"],
@@ -72,6 +76,7 @@ class CompilerWorkflow:
             "generation_note": generation_note,
             "model_name": synthesis.model_name,
             "reasoning_note": synthesis.reasoning_note,
+            "manual_overrides": _override_summary(metadata_overrides or []),
         }
         publish_result = None
         if self.publisher and candidate_path and evidence_path:
@@ -111,3 +116,24 @@ class CompilerWorkflow:
             "constraints": prompt.constraints,
             "source_counts": evidence_bundle.counts,
         }
+
+
+def _override_summary(metadata_overrides: list[dict[str, Any]]) -> dict[str, Any]:
+    action_patch_count = 0
+    field_patch_count = 0
+    remove_field_count = 0
+    files = []
+    for overrides in metadata_overrides:
+        action_patch_count += len(overrides.get("action_patches") or {})
+        field_patch_count += sum(len(items or []) for items in (overrides.get("field_patches") or {}).values())
+        remove_field_count += sum(len(items or []) for items in (overrides.get("remove_fields") or {}).values())
+        source = str(overrides.get("source_file") or "").strip()
+        if source:
+            files.append(source)
+    return {
+        "applied": bool(metadata_overrides),
+        "files": files,
+        "action_patch_count": action_patch_count,
+        "field_patch_count": field_patch_count,
+        "remove_field_count": remove_field_count,
+    }

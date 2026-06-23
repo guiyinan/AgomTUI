@@ -53,11 +53,81 @@ Validate and publish from a curated candidate file while the LLM backend is stil
 agomtui-compile compile-static --project-root . --host-kind django --openapi-file examples\metadata\minimal.openapi.json --django-contract-file examples\metadata\minimal.django_contract_manifest.json --candidate-file examples\metadata\minimal.tui_operation_graph.json --output tmp\published.json --evidence-output tmp\evidence.json
 ```
 
+Validate a metadata file without publishing:
+
+```powershell
+agomtui-compile validate-metadata --metadata-file examples\metadata\minimal.tui_operation_graph.json
+```
+
+Validate and compact a metadata file without running collectors:
+
+```powershell
+agomtui-compile compact-metadata --metadata-file examples\metadata\minimal.tui_operation_graph.json --output tmp\published.compact.json
+```
+
 Validate and publish from a JSON result produced by an AI skill:
 
 ```powershell
 agomtui-compile compile-skill-result --project-root . --host-kind django --openapi-file examples\metadata\minimal.openapi.json --django-contract-file examples\metadata\minimal.django_contract_manifest.json --skill-result-file examples\metadata\minimal.skill_result.json --output tmp\published.skill.json --evidence-output tmp\evidence.skill.json
 ```
+
+## Manual overrides
+
+Published metadata is an output artifact. If the same `--output` path is used again, the publisher overwrites it. Terminal manual edits should therefore live in a reviewed override file and be applied on every compile:
+
+```powershell
+agomtui-compile compile-static --project-root . --host-kind django --openapi-file examples\metadata\minimal.openapi.json --django-contract-file examples\metadata\minimal.django_contract_manifest.json --candidate-file examples\metadata\minimal.tui_operation_graph.json --override-file examples\metadata\minimal.override.json --output tmp\published.override.json --evidence-output tmp\evidence.override.json
+```
+
+Override files are applied after synthesis and before validation / compaction. The evidence artifact records whether overrides were applied and how many action / field patches were used.
+
+Supported override shape:
+
+```json
+{
+  "schema_version": "tui-metadata-override.v1",
+  "registry_key": "default",
+  "action_patches": {
+    "overview.status": {
+      "label": "Sync Latest Quotes",
+      "method": "POST",
+      "endpoint": "/api/tui-example/quotes/sync/",
+      "intent": "sync_latest_quotes",
+      "risk": "write",
+      "task_tier": "operation",
+      "task_group": "00 Governed Actions",
+      "executor": "sync_latest_quotes"
+    }
+  },
+  "field_patches": {
+    "overview.status": [
+      {
+        "key": "symbols",
+        "label": "Asset Codes",
+        "input_type": "text",
+        "value_type": "string",
+        "required": true,
+        "binding": "body",
+        "placeholder": "AAPL,MSFT"
+      }
+    ]
+  },
+  "remove_fields": {
+    "overview.status": ["old_field"]
+  }
+}
+```
+
+Use `action_patches` for titles, grouping, `method`, `risk`, `executor`, and governance fields. Use `field_patches` to add or update fields by key. Use `remove_fields` to delete generated fields by key.
+
+Governance fields validated by `tui-metadata.v3`:
+
+- `risk`: `read`, `ai`, `write`, `unsafe`, or `admin`
+- `confirmation_required`: boolean; write actions and non-GET admin actions must keep this true
+- `requires_password`: boolean metadata hint; host adapters still enforce real password checks
+- `audit_required`: boolean; write / admin non-GET actions must keep this true
+- `sensitive_level`: `none`, `low`, `medium`, `high`, or `critical`
+- `executor`: optional host executor label; dispatch is still host-owned
 
 ## Django contract manifest shape
 

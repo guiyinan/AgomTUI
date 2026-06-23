@@ -15,10 +15,12 @@ except ImportError:  # pragma: no cover - local validator still protects runtime
     JsonSchemaValidationError = Exception  # type: ignore[assignment]
 
 TUI_METADATA_SCHEMA_VERSION = "tui-metadata.v3"
+TUI_METADATA_OVERRIDE_SCHEMA_VERSION = "tui-metadata-override.v1"
 TUI_METADATA_SCHEMA_PATH = Path(__file__).resolve().parent / "schema" / "tui_metadata.schema.v3.json"
 ALLOWED_TUI_RISKS = {"read", "ai", "write", "unsafe", "admin"}
 ALLOWED_TUI_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 ALLOWED_TUI_VIEW_TYPES = {"auto", "status", "detail", "datagrid", "message", "queue_workbench"}
+ALLOWED_TUI_SENSITIVE_LEVELS = {"none", "low", "medium", "high", "critical"}
 ALLOWED_TUI_FIELD_INPUT_TYPES = {
     "checkbox",
     "date",
@@ -106,10 +108,89 @@ HIGH_REVIEW_FIELD_TOKENS = (
     "value",
     "weight",
 )
+GOVERNED_TUI_RISKS = {"write", "admin"}
 
 
 class TuiMetadataValidationError(ValueError):
     """Raised when TUI metadata cannot be safely published."""
+
+
+def apply_tui_metadata_overrides(payload: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+    """Apply reviewed publish-time overrides before validation and compaction.
+
+    Overrides are intended for terminal manual edits that must survive compiler
+    regeneration. They are applied after synthesis and before validation, so the
+    published artifact still has one schema-valid shape.
+    """
+
+    if not isinstance(payload, dict):
+        raise TuiMetadataValidationError("TUI metadata payload must be an object")
+    if not isinstance(overrides, dict):
+        raise TuiMetadataValidationError("TUI metadata overrides must be an object")
+    override_schema_version = str(overrides.get("schema_version") or TUI_METADATA_OVERRIDE_SCHEMA_VERSION)
+    if override_schema_version != TUI_METADATA_OVERRIDE_SCHEMA_VERSION:
+        raise TuiMetadataValidationError(
+            f"Unsupported TUI metadata override schema_version: {override_schema_version}"
+        )
+
+    patched = copy.deepcopy(payload)
+    override_registry_key = str(overrides.get("registry_key") or "").strip()
+    payload_registry_key = str(patched.get("registry_key") or "default").strip()
+    if override_registry_key and override_registry_key != "*" and override_registry_key != payload_registry_key:
+        raise TuiMetadataValidationError(
+            f"Override registry_key mismatch: {override_registry_key} != {payload_registry_key}"
+        )
+
+    actions = patched.setdefault("actions", [])
+    if not isinstance(actions, list):
+        raise TuiMetadataValidationError("actions must be a list before overrides can be applied")
+    actions_by_key = {str(action.get("key") or ""): action for action in actions if isinstance(action, dict)}
+
+    for action_key, patch in _mapping_items(overrides.get("action_patches"), "action_patches"):
+        action = actions_by_key.get(action_key)
+        if action is None:
+            raise TuiMetadataValidationError(f"Override references unknown action: {action_key}")
+        if not isinstance(patch, dict):
+            raise TuiMetadataValidationError(f"Action override must be an object: {action_key}")
+        _deep_merge(action, patch)
+
+    for action_key, field_keys in _mapping_items(overrides.get("remove_fields"), "remove_fields"):
+        action = actions_by_key.get(action_key)
+        if action is None:
+            raise TuiMetadataValidationError(f"Field removal references unknown action: {action_key}")
+        if not isinstance(field_keys, list):
+            raise TuiMetadataValidationError(f"remove_fields must be a list: {action_key}")
+        remove_keys = {str(field_key) for field_key in field_keys}
+        action["fields"] = [
+            field
+            for field in action.get("fields") or []
+            if not isinstance(field, dict) or str(field.get("key") or "") not in remove_keys
+        ]
+
+    for action_key, field_patches in _mapping_items(overrides.get("field_patches"), "field_patches"):
+        action = actions_by_key.get(action_key)
+        if action is None:
+            raise TuiMetadataValidationError(f"Field override references unknown action: {action_key}")
+        if not isinstance(field_patches, list):
+            raise TuiMetadataValidationError(f"field_patches must be a list: {action_key}")
+        fields = action.setdefault("fields", [])
+        if not isinstance(fields, list):
+            raise TuiMetadataValidationError(f"Action fields must be a list before overrides: {action_key}")
+        fields_by_key = {str(field.get("key") or ""): field for field in fields if isinstance(field, dict)}
+        for field_patch in field_patches:
+            if not isinstance(field_patch, dict):
+                raise TuiMetadataValidationError(f"Field override must be an object: {action_key}")
+            field_key = str(field_patch.get("key") or "").strip()
+            if not field_key:
+                raise TuiMetadataValidationError(f"Field override missing key: {action_key}")
+            current = fields_by_key.get(field_key)
+            if current is None:
+                fields.append(copy.deepcopy(field_patch))
+                fields_by_key[field_key] = fields[-1]
+            else:
+                _deep_merge(current, field_patch)
+
+    return patched
 
 
 def validate_tui_metadata(payload: dict[str, Any]) -> dict[str, Any]:
@@ -223,6 +304,15 @@ def validate_tui_metadata(payload: dict[str, Any]) -> dict[str, Any]:
         action.setdefault("description", "")
         action.setdefault("source", "published")
         action.setdefault("raw_debug", True)
+        action.setdefault("confirmation_required", _default_confirmation_required(action))
+        action.setdefault("requires_password", False)
+        action.setdefault("audit_required", _default_audit_required(action))
+        action.setdefault("sensitive_level", _default_sensitive_level(action))
+        action.setdefault("executor", "")
+        action.setdefault("task_group", "")
+        action.setdefault("task_tier", "")
+        action.setdefault("sequence", 999)
+        _validate_governance_contract(action)
         _validate_action_source(action)
         _validate_confirmed_operation_contract(action)
 
@@ -331,8 +421,20 @@ def compact_tui_metadata_payload(payload: dict[str, Any]) -> dict[str, Any]:
             action.pop("raw_debug", None)
         if action.get("description") == "":
             action.pop("description", None)
+        if action.get("confirmation_required") == _default_confirmation_required(action):
+            action.pop("confirmation_required", None)
+        if action.get("requires_password") is False:
+            action.pop("requires_password", None)
+        if action.get("audit_required") == _default_audit_required(action):
+            action.pop("audit_required", None)
+        if action.get("sensitive_level") == _default_sensitive_level(action):
+            action.pop("sensitive_level", None)
+        if action.get("executor") == "":
+            action.pop("executor", None)
         if action.get("task_group") == "":
             action.pop("task_group", None)
+        if action.get("task_tier") == "":
+            action.pop("task_tier", None)
         if action.get("sequence") == 999:
             action.pop("sequence", None)
         if action.get("module_key") == screen_module_by_key.get(str(action.get("screen_key"))):
@@ -406,6 +508,51 @@ def _validate_action_source(action: dict[str, Any]) -> None:
         raise TuiMetadataValidationError(f"Action has unsupported source: {action['key']}.{source}")
 
 
+def _validate_governance_contract(action: dict[str, Any]) -> None:
+    for key in ("confirmation_required", "requires_password", "audit_required"):
+        if not isinstance(action.get(key), bool):
+            raise TuiMetadataValidationError(f"Action governance flag must be boolean: {action['key']}.{key}")
+    if str(action.get("sensitive_level") or "") not in ALLOWED_TUI_SENSITIVE_LEVELS:
+        raise TuiMetadataValidationError(f"Action has unsupported sensitive_level: {action['key']}")
+    if not isinstance(action.get("executor"), str):
+        raise TuiMetadataValidationError(f"Action executor must be a string: {action['key']}")
+    if not isinstance(action.get("task_group"), str):
+        raise TuiMetadataValidationError(f"Action task_group must be a string: {action['key']}")
+    if str(action.get("task_tier") or "") not in {"", "primary", "support", "advanced", "operation"}:
+        raise TuiMetadataValidationError(f"Action has unsupported task_tier: {action['key']}")
+    try:
+        action["sequence"] = int(action.get("sequence", 999))
+    except (TypeError, ValueError) as exc:
+        raise TuiMetadataValidationError(f"Action sequence must be an integer: {action['key']}") from exc
+    if _default_confirmation_required(action) and not action["confirmation_required"]:
+        raise TuiMetadataValidationError(f"Governed action must require confirmation: {action['key']}")
+    if _default_audit_required(action) and not action["audit_required"]:
+        raise TuiMetadataValidationError(f"Governed action must require audit: {action['key']}")
+
+
+def _default_confirmation_required(action: dict[str, Any]) -> bool:
+    risk = str(action.get("risk") or "read").strip().lower()
+    method = str(action.get("method") or "GET").strip().upper()
+    return risk == "write" or (risk == "admin" and method != "GET")
+
+
+def _default_audit_required(action: dict[str, Any]) -> bool:
+    risk = str(action.get("risk") or "read").strip().lower()
+    method = str(action.get("method") or "GET").strip().upper()
+    return risk in GOVERNED_TUI_RISKS and method != "GET"
+
+
+def _default_sensitive_level(action: dict[str, Any]) -> str:
+    risk = str(action.get("risk") or "read").strip().lower()
+    if risk == "admin":
+        return "critical"
+    if risk in {"write", "unsafe"}:
+        return "high"
+    if risk == "ai":
+        return "medium"
+    return "none"
+
+
 def _validate_confirmed_operation_contract(action: dict[str, Any]) -> None:
     risk = str(action.get("risk") or "read")
     if risk != "write":
@@ -441,3 +588,19 @@ def _validate_with_json_schema(payload: dict[str, Any]) -> None:
     first = errors[0]
     path = ".".join(str(part) for part in first.path) or "<root>"
     raise TuiMetadataValidationError(f"JSON Schema validation failed at {path}: {first.message}")
+
+
+def _mapping_items(value: Any, label: str) -> list[tuple[str, Any]]:
+    if value in (None, {}):
+        return []
+    if not isinstance(value, dict):
+        raise TuiMetadataValidationError(f"{label} must be an object")
+    return [(str(key), item) for key, item in value.items()]
+
+
+def _deep_merge(target: dict[str, Any], patch: dict[str, Any]) -> None:
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _deep_merge(target[key], value)
+            continue
+        target[key] = copy.deepcopy(value)

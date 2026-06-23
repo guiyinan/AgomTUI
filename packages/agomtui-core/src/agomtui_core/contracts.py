@@ -25,6 +25,13 @@ class ActionExecutor(Protocol):
         """Return a serializable result payload."""
 
 
+class AuditSink(Protocol):
+    """Append-only audit destination owned by the host adapter."""
+
+    def append(self, record: dict[str, Any]) -> None:
+        """Persist one canonical audit record without mutating prior records."""
+
+
 class CapabilityCollector(Protocol):
     """Compile-time capability source for metadata generation."""
 

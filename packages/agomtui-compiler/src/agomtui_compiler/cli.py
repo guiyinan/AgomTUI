@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from agomtui_core import TUI_METADATA_SCHEMA_PATH
+from agomtui_core import TUI_METADATA_SCHEMA_PATH, compact_tui_metadata_payload, validate_tui_metadata
 
 from .collector import (
     CollectionContext,
@@ -52,6 +52,15 @@ def _add_source_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_override_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--override-file",
+        action="append",
+        default=[],
+        help="Reviewed metadata override JSON applied after synthesis and before validation",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AgomTUI compiler skeleton")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -77,6 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_source_arguments(compile_cmd)
     compile_cmd.add_argument("--candidate-file", required=True, help="Curated candidate metadata JSON")
     compile_cmd.add_argument("--schema-path", default=str(TUI_METADATA_SCHEMA_PATH), help="Schema path")
+    _add_override_argument(compile_cmd)
     compile_cmd.add_argument("--output", required=True, help="Published compact metadata output path")
     compile_cmd.add_argument("--evidence-output", required=True, help="Evidence artifact output path")
 
@@ -89,8 +99,16 @@ def build_parser() -> argparse.ArgumentParser:
     _add_source_arguments(compile_skill)
     compile_skill.add_argument("--skill-result-file", required=True, help="AI skill result JSON")
     compile_skill.add_argument("--schema-path", default=str(TUI_METADATA_SCHEMA_PATH), help="Schema path")
+    _add_override_argument(compile_skill)
     compile_skill.add_argument("--output", required=True, help="Published compact metadata output path")
     compile_skill.add_argument("--evidence-output", required=True, help="Evidence artifact output path")
+
+    validate_cmd = subparsers.add_parser("validate-metadata", help="Validate one TUI metadata JSON file")
+    validate_cmd.add_argument("--metadata-file", required=True, help="Metadata JSON file to validate")
+
+    compact_cmd = subparsers.add_parser("compact-metadata", help="Validate and compact one TUI metadata JSON file")
+    compact_cmd.add_argument("--metadata-file", required=True, help="Metadata JSON file to validate and compact")
+    compact_cmd.add_argument("--output", required=True, help="Compacted metadata output path")
 
     return parser
 
@@ -146,9 +164,65 @@ def _build_request_payload(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _load_json_file(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"JSON file must contain one object: {path}")
+    return payload
+
+
+def _load_override_files(paths: list[str]) -> list[dict[str, Any]]:
+    overrides = []
+    for path_text in paths:
+        path = Path(path_text).resolve()
+        payload = _load_json_file(path)
+        payload.setdefault("source_file", str(path))
+        overrides.append(payload)
+    return overrides
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    if args.command == "validate-metadata":
+        validated = validate_tui_metadata(_load_json_file(Path(args.metadata_file).resolve()))
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "version": validated["version"],
+                    "schema_version": validated["schema_version"],
+                    "registry_key": validated.get("registry_key", "default"),
+                    "actions": len(validated["actions"]),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "compact-metadata":
+        metadata_path = Path(args.metadata_file).resolve()
+        output_path = Path(args.output).resolve()
+        validated = validate_tui_metadata(_load_json_file(metadata_path))
+        compacted = compact_tui_metadata_payload(validated)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(compacted, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "input": str(metadata_path),
+                    "output": str(output_path),
+                    "version": validated["version"],
+                    "schema_version": validated["schema_version"],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
     if not _has_source_args(args):
         parser.error("At least one evidence source is required. Use --openapi-file, --django-contract-file, or --evidence-file.")
 
@@ -203,6 +277,7 @@ def main() -> int:
         candidate_path=Path(args.output).resolve(),
         evidence_path=Path(args.evidence_output).resolve(),
         generation_note=generation_note,
+        metadata_overrides=_load_override_files(args.override_file),
     )
     print(
         json.dumps(

@@ -30,6 +30,7 @@ for package_src in (CORE_SRC, COMPILER_SRC):
 
 from agomtui_core import (  # noqa: E402
     TUI_METADATA_SCHEMA_PATH,
+    GovernedActionRunner,
     apply_default_field_values,
     build_confirmation_required_result,
     build_missing_fields_result,
@@ -322,6 +323,32 @@ def action_index() -> dict[str, dict[str, Any]]:
 
 
 ACTIONS_BY_KEY = action_index()
+AUDIT_RECORDS: list[dict[str, Any]] = []
+
+
+class DemoAuditSink:
+    def append(self, record: dict[str, Any]) -> None:
+        AUDIT_RECORDS.append(copy.deepcopy(record))
+
+
+class DemoActionExecutor:
+    def execute(
+        self,
+        *,
+        method: str,
+        endpoint: str,
+        params: dict[str, Any],
+        body: dict[str, Any],
+        context: Any | None = None,
+    ) -> dict[str, Any]:
+        del method, endpoint, body
+        action_key = str((context or {}).get("action_key") or "")
+        return execute_action_logic(action_key, params, confirmed=True)
+
+
+def verify_demo_reauth(action: dict[str, Any], evidence: dict[str, Any], context: Any | None = None) -> bool:
+    del action, context
+    return str(evidence.get("credential") or "") == "demo-password"
 
 
 def get_action(action_key: str) -> dict[str, Any]:
@@ -548,7 +575,28 @@ def find_task(task_id: str) -> dict[str, Any]:
     raise KeyError(task_id)
 
 
-def handle_action(action_key: str, params: dict[str, Any], confirmed: bool) -> dict[str, Any]:
+def handle_action(
+    action_key: str,
+    params: dict[str, Any],
+    confirmed: bool,
+    confirmation_evidence: dict[str, Any] | None = None,
+    reauth_evidence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    action = get_action(action_key)
+    if confirmed and not confirmation_evidence:
+        confirmation_evidence = {"confirmed": True, "confirmed_at": utc_now()}
+    return GovernedActionRunner(DemoActionExecutor(), DemoAuditSink(), reauth_verifier=verify_demo_reauth).execute(
+        action,
+        params,
+        context={"action_key": action_key},
+        actor=HOST_DEMO_INFO["user"],
+        confirmed=confirmed,
+        confirmation_evidence=confirmation_evidence,
+        reauth_evidence=reauth_evidence,
+    )
+
+
+def execute_action_logic(action_key: str, params: dict[str, Any], confirmed: bool) -> dict[str, Any]:
     page = int(params.get("page") or 1)
     if action_key == "command-center.regime-status":
         return response(
@@ -1506,8 +1554,10 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
             return
         params = body.get("params") or {}
         confirmed = bool(body.get("confirmed"))
+        confirmation_evidence = body.get("confirmation") if isinstance(body.get("confirmation"), dict) else None
+        reauth_evidence = body.get("reauth") if isinstance(body.get("reauth"), dict) else None
         try:
-            result = handle_action(match.group("action_key"), params, confirmed)
+            result = handle_action(match.group("action_key"), params, confirmed, confirmation_evidence, reauth_evidence)
         except KeyError as error:
             self.respond_error_json(HTTPStatus.NOT_FOUND, f"Unknown action: {error.args[0]}")
             return

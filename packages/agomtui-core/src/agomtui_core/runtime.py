@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import re
+from datetime import UTC, datetime
 from html import unescape
 from html.parser import HTMLParser
 from math import ceil
@@ -13,6 +14,7 @@ from urllib.parse import urlparse
 from .metadata import validate_tui_metadata
 
 RuntimeMetadataHook = Callable[[dict[str, Any]], dict[str, Any]]
+TUI_AUDIT_SCHEMA_VERSION = "tui-audit.v1"
 
 _IDENTIFIER_FIELDS = {
     "id",
@@ -30,6 +32,17 @@ _IDENTIFIER_FIELDS = {
 }
 _HTML_TAG_PATTERN = re.compile(r"</?\s*[a-zA-Z][a-zA-Z0-9:-]*(?:\s+[^<>]*)?>")
 _ESCAPED_HTML_TAG_PATTERN = re.compile(r"&lt;/?\s*[a-zA-Z][a-zA-Z0-9:-]*")
+_SENSITIVE_PARAM_TOKENS = (
+    "access_token",
+    "api_key",
+    "authorization",
+    "credential",
+    "otp",
+    "passcode",
+    "password",
+    "secret",
+    "token",
+)
 
 
 def humanize_runtime_key(value: str) -> str:
@@ -128,9 +141,27 @@ def missing_required_fields(
 def action_requires_confirmation(action: Mapping[str, Any]) -> bool:
     """Return whether one action should require operator confirmation."""
 
+    if bool(action.get("confirmation_required")):
+        return True
     risk = str(action.get("risk") or "").strip().lower()
     method = str(action.get("method") or "GET").strip().upper()
     return risk == "write" or (risk == "admin" and method != "GET")
+
+
+def action_requires_reauth(action: Mapping[str, Any]) -> bool:
+    """Return whether one action must pass a re-authentication challenge."""
+
+    return bool(action.get("requires_password"))
+
+
+def action_requires_audit(action: Mapping[str, Any]) -> bool:
+    """Return whether one action must emit a canonical audit record."""
+
+    if bool(action.get("audit_required")):
+        return True
+    risk = str(action.get("risk") or "").strip().lower()
+    method = str(action.get("method") or "GET").strip().upper()
+    return risk in {"write", "admin"} and method != "GET"
 
 
 def build_runtime_action_result(
@@ -155,6 +186,51 @@ def build_runtime_action_result(
             "raw_available": allow_raw,
             "raw_response": copy.deepcopy(raw_response) if allow_raw else None,
         },
+    }
+
+
+def build_password_challenge_required_result(
+    action: Mapping[str, Any],
+    *,
+    message: str | None = None,
+    challenge_id: str = "",
+    version: str = "tui-workbench.v2",
+) -> dict[str, Any]:
+    """Return the standard re-authentication challenge contract."""
+
+    action_title = str(action.get("label") or action.get("key") or "Action")
+    resolved_message = message or f"{action_title} requires identity verification before execution."
+    return {
+        "version": version,
+        "action": copy.deepcopy(dict(action)),
+        "confirmation_required": False,
+        "password_challenge_required": True,
+        "password_challenge": {
+            "challenge_id": challenge_id,
+            "message": resolved_message,
+            "field": {
+                "key": "password",
+                "label": "Password",
+                "input_type": "password",
+                "required": True,
+            },
+        },
+        "response": {"status_code": 401},
+        "view_model": {
+            "kind": "message",
+            "title": action_title,
+            "status": "Password required",
+            "message": resolved_message,
+            "sections": [
+                {
+                    "title": "Identity verification",
+                    "rows": [],
+                    "body": [resolved_message],
+                }
+            ],
+            "raw_hint": "No host action was executed before re-authentication.",
+        },
+        "debug": {"raw_available": False, "raw_response": None},
     }
 
 
@@ -251,6 +327,215 @@ def build_missing_fields_result(
         "missing_fields": [copy.deepcopy(dict(field)) for field in missing_fields],
         "debug": {"raw_available": False, "raw_response": None},
     }
+
+
+def build_audit_record(
+    action: Mapping[str, Any],
+    params: Mapping[str, Any],
+    *,
+    actor: str,
+    outcome: str,
+    confirmation_evidence: Mapping[str, Any] | None = None,
+    reauth_evidence: Mapping[str, Any] | None = None,
+    result: Mapping[str, Any] | None = None,
+    error: str = "",
+    occurred_at: str | None = None,
+) -> dict[str, Any]:
+    """Return one canonical append-only audit record payload."""
+
+    response = result.get("response") if isinstance(result, Mapping) else {}
+    status_code = response.get("status_code") if isinstance(response, Mapping) else None
+    return {
+        "schema_version": TUI_AUDIT_SCHEMA_VERSION,
+        "occurred_at": occurred_at or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "actor": str(actor or "anonymous"),
+        "action_key": str(action.get("key") or ""),
+        "action_label": str(action.get("label") or ""),
+        "risk": str(action.get("risk") or "read"),
+        "sensitive_level": str(action.get("sensitive_level") or "none"),
+        "audit_required": bool(action_requires_audit(action)),
+        "params": mask_sensitive_params(action, params),
+        "confirmation": _audit_confirmation_payload(confirmation_evidence),
+        "reauth": _audit_reauth_payload(reauth_evidence),
+        "outcome": str(outcome),
+        "result": {
+            "status_code": status_code,
+            "confirmation_required": bool(result.get("confirmation_required")) if isinstance(result, Mapping) else False,
+            "password_challenge_required": bool(result.get("password_challenge_required")) if isinstance(result, Mapping) else False,
+            "missing_fields": [
+                str(field.get("key") or "")
+                for field in (result.get("missing_fields") if isinstance(result, Mapping) else []) or []
+                if isinstance(field, Mapping)
+            ],
+            "error": str(error or ""),
+        },
+    }
+
+
+def mask_sensitive_params(action: Mapping[str, Any], params: Mapping[str, Any]) -> dict[str, Any]:
+    """Return params with credential-like fields masked for audit storage."""
+
+    sensitive_keys = {
+        str(field.get("key") or "")
+        for field in action.get("fields") or []
+        if isinstance(field, Mapping) and _is_sensitive_param_key(str(field.get("key") or ""))
+    }
+    masked: dict[str, Any] = {}
+    for key, value in dict(params or {}).items():
+        normalized_key = str(key)
+        if normalized_key in sensitive_keys or _is_sensitive_param_key(normalized_key):
+            masked[normalized_key] = "***"
+            continue
+        masked[normalized_key] = copy.deepcopy(value)
+    return masked
+
+
+class GovernedActionRunner:
+    """Single no-bypass execution path for governed runtime actions."""
+
+    def __init__(
+        self,
+        executor: Any,
+        audit_sink: Any | None = None,
+        reauth_verifier: Callable[[Mapping[str, Any], Mapping[str, Any], Any | None], bool] | None = None,
+    ) -> None:
+        self.executor = executor
+        self.audit_sink = audit_sink
+        self.reauth_verifier = reauth_verifier
+
+    def execute(
+        self,
+        action: Mapping[str, Any],
+        params: Mapping[str, Any],
+        *,
+        context: Any | None = None,
+        actor: str = "",
+        confirmed: bool = False,
+        confirmation_evidence: Mapping[str, Any] | None = None,
+        reauth_evidence: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Enforce missing-fields, confirmation, re-auth, audit, then execute."""
+
+        resolved_params = apply_default_field_values(action, params)
+        missing = missing_required_fields(action, resolved_params)
+        if missing:
+            result = build_missing_fields_result(action, missing)
+            self._audit(
+                action,
+                resolved_params,
+                actor=actor,
+                outcome="rejected_missing_fields",
+                confirmation_evidence=confirmation_evidence,
+                reauth_evidence=reauth_evidence,
+                result=result,
+            )
+            return result
+
+        if action_requires_confirmation(action) and not confirmed:
+            result = build_confirmation_required_result(action)
+            self._audit(
+                action,
+                resolved_params,
+                actor=actor,
+                outcome="blocked_confirmation_required",
+                confirmation_evidence=confirmation_evidence,
+                reauth_evidence=reauth_evidence,
+                result=result,
+            )
+            return result
+
+        if action_requires_reauth(action) and not self._reauth_verified(action, reauth_evidence, context):
+            outcome = "blocked_reauth_required" if not reauth_evidence else "blocked_reauth_failed"
+            result = build_password_challenge_required_result(action)
+            self._audit(
+                action,
+                resolved_params,
+                actor=actor,
+                outcome=outcome,
+                confirmation_evidence=confirmation_evidence,
+                reauth_evidence=reauth_evidence,
+                result=result,
+            )
+            return result
+
+        if action_requires_reauth(action):
+            reauth_evidence = _verified_reauth_evidence(reauth_evidence)
+        self._ensure_audit_sink(action)
+        try:
+            result = self.executor.execute(
+                method=str(action.get("method") or "GET").upper(),
+                endpoint=str(action.get("endpoint") or ""),
+                params=dict(resolved_params),
+                body=dict(resolved_params),
+                context=context,
+            )
+        except Exception as exc:
+            self._audit(
+                action,
+                resolved_params,
+                actor=actor,
+                outcome="failed_exception",
+                confirmation_evidence=confirmation_evidence,
+                reauth_evidence=reauth_evidence,
+                error=str(exc),
+            )
+            raise
+
+        status_code = _result_status_code(result)
+        self._audit(
+            action,
+            resolved_params,
+            actor=actor,
+            outcome="succeeded" if 200 <= status_code < 400 else "failed",
+            confirmation_evidence=confirmation_evidence,
+            reauth_evidence=reauth_evidence,
+            result=result,
+        )
+        return result
+
+    def _audit(
+        self,
+        action: Mapping[str, Any],
+        params: Mapping[str, Any],
+        *,
+        actor: str,
+        outcome: str,
+        confirmation_evidence: Mapping[str, Any] | None = None,
+        reauth_evidence: Mapping[str, Any] | None = None,
+        result: Mapping[str, Any] | None = None,
+        error: str = "",
+    ) -> None:
+        if not action_requires_audit(action):
+            return
+        self._ensure_audit_sink(action)
+        self.audit_sink.append(
+            build_audit_record(
+                action,
+                params,
+                actor=actor,
+                outcome=outcome,
+                confirmation_evidence=confirmation_evidence,
+                reauth_evidence=reauth_evidence,
+                result=result,
+                error=error,
+            )
+        )
+
+    def _ensure_audit_sink(self, action: Mapping[str, Any]) -> None:
+        if action_requires_audit(action) and self.audit_sink is None:
+            raise RuntimeError(f"Audit sink is required for audit_required action: {action.get('key')}")
+
+    def _reauth_verified(
+        self,
+        action: Mapping[str, Any],
+        reauth_evidence: Mapping[str, Any] | None,
+        context: Any | None,
+    ) -> bool:
+        if not action_requires_reauth(action):
+            return True
+        if not reauth_evidence or self.reauth_verifier is None:
+            return False
+        return bool(self.reauth_verifier(action, reauth_evidence, context))
 
 
 def looks_like_password_challenge(status_code: int, payload: Any | None) -> bool:
@@ -882,3 +1167,49 @@ def _is_blank(value: Any) -> bool:
     if isinstance(value, (list, tuple, set, dict)):
         return len(value) == 0
     return False
+
+
+def _is_sensitive_param_key(key: str) -> bool:
+    normalized = str(key or "").strip().lower().replace("-", "_")
+    return any(token in normalized for token in _SENSITIVE_PARAM_TOKENS)
+
+
+def _audit_confirmation_payload(evidence: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not evidence:
+        return {"confirmed": False}
+    return {
+        "confirmed": bool(evidence.get("confirmed", True)),
+        "confirmed_at": str(evidence.get("confirmed_at") or ""),
+        "message": str(evidence.get("message") or ""),
+    }
+
+
+def _audit_reauth_payload(evidence: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not evidence:
+        return {"verified": False}
+    return {
+        "verified": bool(evidence.get("verified", False)),
+        "verified_at": str(evidence.get("verified_at") or ""),
+        "method": str(evidence.get("method") or "password"),
+        "challenge_id": str(evidence.get("challenge_id") or ""),
+    }
+
+
+def _verified_reauth_evidence(evidence: Mapping[str, Any] | None) -> dict[str, Any]:
+    payload = dict(evidence or {})
+    payload["verified"] = True
+    payload.setdefault("verified_at", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    payload.setdefault("method", "password")
+    return payload
+
+
+def _result_status_code(result: Mapping[str, Any] | None) -> int:
+    if not isinstance(result, Mapping):
+        return 200
+    response = result.get("response")
+    if not isinstance(response, Mapping):
+        return 200
+    try:
+        return int(response.get("status_code", 200))
+    except (TypeError, ValueError):
+        return 200

@@ -3,8 +3,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from agomtui_compiler.cli import _build_collectors, _build_request_payload, build_parser
+from agomtui_compiler.cli import StaticCandidateSynthesizer, _build_collectors, _build_request_payload, build_parser
 from agomtui_compiler.collector import CollectionContext, DjangoContractManifestCollector, OpenApiSpecCollector
+from agomtui_compiler.workflow import CompilerWorkflow
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -52,6 +53,63 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(payload["source_counts"]["openapi"], 1)
         self.assertEqual(payload["source_counts"]["django-model"], 1)
         self.assertEqual(payload["source_counts"]["ddd-aggregate"], 1)
+
+    def test_validate_and_compact_commands_do_not_require_evidence_sources(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "validate-metadata",
+                "--metadata-file",
+                str(EXAMPLES / "minimal.tui_operation_graph.json"),
+            ]
+        )
+
+        self.assertEqual(args.command, "validate-metadata")
+        self.assertFalse(hasattr(args, "openapi_file"))
+
+    def test_compile_applies_manual_overrides_before_publish(self) -> None:
+        workflow = CompilerWorkflow(
+            collectors=[
+                OpenApiSpecCollector(EXAMPLES / "minimal.openapi.json"),
+                DjangoContractManifestCollector(EXAMPLES / "minimal.django_contract_manifest.json"),
+            ],
+            synthesizer=StaticCandidateSynthesizer(EXAMPLES / "minimal.tui_operation_graph.json"),
+        )
+
+        result = workflow.compile(
+            context=CollectionContext(project_root=REPO_ROOT, host_kind="django"),
+            schema_path=REPO_ROOT / "packages" / "agomtui-core" / "src" / "agomtui_core" / "schema" / "tui_metadata.schema.v3.json",
+            metadata_overrides=[
+                {
+                    "registry_key": "default",
+                    "source_file": "manual.override.json",
+                    "action_patches": {
+                        "overview.status": {
+                            "risk": "write",
+                            "method": "POST",
+                            "task_tier": "operation",
+                        }
+                    },
+                    "field_patches": {
+                        "overview.status": [
+                            {
+                                "key": "symbols",
+                                "label": "Asset Codes",
+                                "input_type": "text",
+                                "required": True,
+                                "binding": "body",
+                            }
+                        ]
+                    },
+                }
+            ],
+        )
+
+        action = result.validated_payload["actions"][0]
+        self.assertEqual(action["risk"], "write")
+        self.assertTrue(action["confirmation_required"])
+        self.assertEqual(action["fields"][0]["key"], "symbols")
+        self.assertEqual(result.evidence_payload["manual_overrides"]["field_patch_count"], 1)
 
 
 if __name__ == "__main__":

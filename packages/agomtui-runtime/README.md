@@ -8,6 +8,7 @@ This folder contains the first extracted runtime shell from AgomTradePro.
 - runtime three-theme switching (`A / B / C`)
 - keyboard-driven TUI layout and panel chrome
 - generic action groups, task cards, and confirmation flow
+- governed action protocol handling for missing fields, confirmation, and password challenge responses
 - generic datagrid / detail / message / dashboard renderers
 - row-fill, inspector, pager, filter, modal, and raw-debug drawer behaviors
 - host-configurable API base via `window.__AGOMTUI_RUNTIME__.apiBase`
@@ -19,6 +20,16 @@ This folder contains the first extracted runtime shell from AgomTradePro.
 - still reflects the current host payload conventions that came from AgomTradePro
 
 Treat this as the product baseline, not the final host-agnostic runtime.
+
+## Governance protocol handling
+
+The browser shell treats these response shapes as runtime protocol, not ordinary errors:
+
+- `missing_fields`: renders a refill modal and replays the same action with completed params
+- `confirmation_required`: renders the confirmation modal and replays with confirmation evidence
+- `password_challenge_required`: renders a re-auth modal and replays with password challenge evidence
+
+The server-side host adapter must still route the replayed request through `GovernedActionRunner`; browser state is convenience, not enforcement.
 
 ## What is intentionally not extracted here
 

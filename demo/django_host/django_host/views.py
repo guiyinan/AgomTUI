@@ -102,9 +102,11 @@ def host_action(request: HttpRequest, action_key: str) -> JsonResponse:
         return _json_response({"ok": False, "error": "Invalid JSON body"}, status=400)
     params = body.get("params") or {}
     confirmed = bool(body.get("confirmed"))
+    confirmation_evidence = body.get("confirmation") if isinstance(body.get("confirmation"), dict) else None
+    reauth_evidence = body.get("reauth") if isinstance(body.get("reauth"), dict) else None
     try:
         payload = demo.hostify_action_result(
-            demo.handle_action(action_key, params, confirmed),
+            demo.handle_action(action_key, params, confirmed, confirmation_evidence, reauth_evidence),
             api_base="/api/tui",
         )
     except KeyError:

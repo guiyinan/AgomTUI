@@ -7,6 +7,9 @@ from pathlib import Path
 
 from agomtui_core import (
     GenericRuntimeViewModelBuilder,
+    GovernedActionRunner,
+    TuiMetadataValidationError,
+    apply_tui_metadata_overrides,
     apply_default_field_values,
     build_confirmation_required_result,
     build_missing_fields_result,
@@ -17,6 +20,27 @@ from agomtui_core import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+class SpyExecutor:
+    def __init__(self, result: dict[str, object] | None = None) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.result = result or {
+            "response": {"status_code": 200},
+            "view_model": {"kind": "message", "title": "OK"},
+        }
+
+    def execute(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(dict(kwargs))
+        return self.result
+
+
+class MemoryAuditSink:
+    def __init__(self) -> None:
+        self.records: list[dict[str, object]] = []
+
+    def append(self, record: dict[str, object]) -> None:
+        self.records.append(record)
 
 
 class RuntimeHelpersTests(unittest.TestCase):
@@ -143,6 +167,204 @@ class RuntimeHelpersTests(unittest.TestCase):
         self.assertEqual(normalized["coverage_summary"]["runtime_pruned_redundant_screen_actions"], 1)
         self.assertEqual(normalized["coverage_summary"]["runtime_patched_actions"], 1)
         self.assertEqual(normalized["coverage_summary"]["hook_applied"], 1)
+
+    def test_metadata_overrides_patch_actions_and_fields_before_validation(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
+        )
+
+        patched = apply_tui_metadata_overrides(
+            payload,
+            {
+                "registry_key": "default",
+                "action_patches": {
+                    "overview.status": {
+                        "risk": "write",
+                        "method": "POST",
+                        "task_group": "00 Governed Actions",
+                        "executor": "sync_latest_quotes",
+                    }
+                },
+                "field_patches": {
+                    "overview.status": [
+                        {
+                            "key": "symbols",
+                            "label": "Asset Codes",
+                            "input_type": "text",
+                            "value_type": "string",
+                            "required": True,
+                            "binding": "body",
+                            "placeholder": "AAPL,MSFT",
+                        }
+                    ]
+                },
+            },
+        )
+
+        validated = validate_tui_metadata(patched)
+        action = validated["actions"][0]
+
+        self.assertEqual(action["risk"], "write")
+        self.assertTrue(action["confirmation_required"])
+        self.assertTrue(action["audit_required"])
+        self.assertEqual(action["sensitive_level"], "high")
+        self.assertEqual(action["executor"], "sync_latest_quotes")
+        self.assertEqual(action["fields"][0]["key"], "symbols")
+
+    def test_governed_action_cannot_disable_confirmation_or_audit(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
+        )
+        payload["actions"][0].update(
+            {
+                "risk": "write",
+                "method": "POST",
+                "confirmation_required": False,
+                "audit_required": False,
+            }
+        )
+
+        with self.assertRaises(TuiMetadataValidationError):
+            validate_tui_metadata(payload)
+
+    def test_governed_runner_blocks_unconfirmed_action_before_executor_and_audits_attempt(self) -> None:
+        action = {
+            "key": "execution.accounts.rebalance",
+            "label": "Submit Rebalance",
+            "method": "POST",
+            "endpoint": "/api/demo/accounts/rebalance/",
+            "risk": "write",
+            "confirmation_required": True,
+            "audit_required": True,
+            "sensitive_level": "high",
+            "fields": [{"key": "account_id", "label": "Account ID", "required": True}],
+        }
+        executor = SpyExecutor()
+        audit = MemoryAuditSink()
+
+        result = GovernedActionRunner(executor, audit).execute(
+            action,
+            {"account_id": "ACC-1"},
+            actor="operator.demo",
+        )
+
+        self.assertTrue(result["confirmation_required"])
+        self.assertEqual(executor.calls, [])
+        self.assertEqual(audit.records[0]["outcome"], "blocked_confirmation_required")
+        self.assertEqual(audit.records[0]["actor"], "operator.demo")
+
+    def test_governed_runner_blocks_missing_fields_before_executor_and_audits_attempt(self) -> None:
+        action = {
+            "key": "execution.tasks.retry",
+            "label": "Retry Task",
+            "method": "POST",
+            "endpoint": "/api/demo/tasks/retry/",
+            "risk": "write",
+            "confirmation_required": True,
+            "audit_required": True,
+            "fields": [{"key": "task_id", "label": "Task ID", "required": True}],
+        }
+        executor = SpyExecutor()
+        audit = MemoryAuditSink()
+
+        result = GovernedActionRunner(executor, audit).execute(action, {}, actor="operator.demo")
+
+        self.assertEqual(result["response"]["status_code"], 400)
+        self.assertEqual(result["missing_fields"][0]["key"], "task_id")
+        self.assertEqual(executor.calls, [])
+        self.assertEqual(audit.records[0]["outcome"], "rejected_missing_fields")
+
+    def test_governed_runner_blocks_reauth_before_executor_and_audits_attempt(self) -> None:
+        action = {
+            "key": "admin.secrets.rotate",
+            "label": "Rotate Secret",
+            "method": "POST",
+            "endpoint": "/api/demo/secrets/rotate/",
+            "risk": "admin",
+            "confirmation_required": True,
+            "requires_password": True,
+            "audit_required": True,
+            "fields": [{"key": "secret_id", "label": "Secret ID", "required": True}],
+        }
+        executor = SpyExecutor()
+        audit = MemoryAuditSink()
+
+        result = GovernedActionRunner(executor, audit).execute(
+            action,
+            {"secret_id": "SEC-1"},
+            actor="operator.demo",
+            confirmed=True,
+            confirmation_evidence={"confirmed": True, "confirmed_at": "2026-06-23T10:00:00Z"},
+        )
+
+        self.assertTrue(result["password_challenge_required"])
+        self.assertEqual(executor.calls, [])
+        self.assertEqual(audit.records[0]["outcome"], "blocked_reauth_required")
+
+    def test_governed_runner_executes_only_after_pipeline_and_masks_audit_params(self) -> None:
+        action = {
+            "key": "admin.secrets.rotate",
+            "label": "Rotate Secret",
+            "method": "POST",
+            "endpoint": "/api/demo/secrets/rotate/",
+            "risk": "admin",
+            "confirmation_required": True,
+            "requires_password": True,
+            "audit_required": True,
+            "sensitive_level": "critical",
+            "fields": [
+                {"key": "secret_id", "label": "Secret ID", "required": True},
+                {"key": "new_password", "label": "New Password", "required": True},
+            ],
+        }
+        executor = SpyExecutor()
+        audit = MemoryAuditSink()
+
+        result = GovernedActionRunner(
+            executor,
+            audit,
+            reauth_verifier=lambda action, evidence, context: evidence.get("credential") == "valid-password",
+        ).execute(
+            action,
+            {"secret_id": "SEC-1", "new_password": "raw-secret"},
+            actor="operator.demo",
+            confirmed=True,
+            confirmation_evidence={"confirmed": True, "confirmed_at": "2026-06-23T10:00:00Z"},
+            reauth_evidence={
+                "credential": "valid-password",
+                "verified": True,
+                "verified_at": "2026-06-23T10:00:02Z",
+                "method": "password",
+            },
+        )
+
+        self.assertEqual(result["response"]["status_code"], 200)
+        self.assertEqual(len(executor.calls), 1)
+        self.assertEqual(audit.records[0]["outcome"], "succeeded")
+        self.assertEqual(audit.records[0]["params"]["new_password"], "***")
+        self.assertTrue(audit.records[0]["confirmation"]["confirmed"])
+        self.assertTrue(audit.records[0]["reauth"]["verified"])
+
+    def test_audit_required_action_cannot_execute_without_audit_sink(self) -> None:
+        action = {
+            "key": "execution.accounts.rebalance",
+            "label": "Submit Rebalance",
+            "method": "POST",
+            "endpoint": "/api/demo/accounts/rebalance/",
+            "risk": "write",
+            "confirmation_required": True,
+            "audit_required": True,
+        }
+        executor = SpyExecutor()
+
+        with self.assertRaises(RuntimeError):
+            GovernedActionRunner(executor).execute(
+                action,
+                {},
+                confirmed=True,
+                confirmation_evidence={"confirmed": True},
+            )
+        self.assertEqual(executor.calls, [])
 
 
 if __name__ == "__main__":

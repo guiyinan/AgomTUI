@@ -78,11 +78,14 @@ If you are evaluating whether this saves real work, the practical answer is:
 
 - metadata schema (`tui-metadata.v3`)
 - metadata validation and compaction
+- reviewed metadata override files for manual terminal edits that must survive regeneration
 - generic server-side runtime helpers:
   - view-model inference
   - confirmation contract
   - missing-fields contract
   - password-challenge detection
+  - no-bypass governed action runner
+  - canonical audit record generation
   - runtime metadata normalization hooks
 - runtime shell layout, keyboard model, theme tokens
 - generic renderers: dashboard, datagrid, detail, and message views
@@ -179,6 +182,35 @@ The intended generation path is:
 4. `agomtui-compiler compile-skill-result` validates, compacts, and publishes the approved artifact
 
 The extracted skill should target host-agnostic runtime metadata first. It should not assume one product's page splits, workflow ordering, or business prose unless those structures are explicitly present in the evidence bundle.
+
+## Published metadata edits
+
+Published metadata is an artifact, not the source of truth. Re-running the compiler against the same publish path overwrites that file. If an operator or developer needs a terminal manual edit to survive regeneration, put it in a reviewed override file and pass it during compile:
+
+```powershell
+agomtui-compile compile-static --project-root . --host-kind django --openapi-file examples\metadata\minimal.openapi.json --django-contract-file examples\metadata\minimal.django_contract_manifest.json --candidate-file examples\metadata\minimal.tui_operation_graph.json --override-file examples\metadata\minimal.override.json --output tmp\published.override.json --evidence-output tmp\evidence.override.json
+```
+
+For dry-run validation without publishing:
+
+```powershell
+agomtui-compile validate-metadata --metadata-file examples\metadata\minimal.tui_operation_graph.json
+agomtui-compile compact-metadata --metadata-file examples\metadata\minimal.tui_operation_graph.json --output tmp\published.compact.json
+```
+
+Action governance fields are schema-validated: `risk`, `confirmation_required`, `requires_password`, `audit_required`, `sensitive_level`, and `executor`. Write actions and non-GET admin actions cannot disable required confirmation or audit.
+
+## Governance-first runtime
+
+AgomTUI treats confirmation, missing-field recovery, re-authentication, and audit as a runtime protocol, not per-screen UI decoration. A governed action should go through one enforced path:
+
+1. missing required fields are returned as a `missing_fields` contract and the shell renders a refill prompt
+2. confirmation-required actions are stopped before execution and replayed only with confirmation evidence
+3. password-challenge actions are stopped until the host verifies re-authentication
+4. audit-required actions cannot reach the executor unless an audit sink is present
+5. success, failure, blocked, and rejected attempts all emit `tui-audit.v1` records
+
+The core audit schema covers actor, action key, masked params, timestamp, confirmation evidence, re-auth evidence, and execution result. Hosts own storage, but should store audit records append-only or tamper-evidently.
 
 ## Start here
 
