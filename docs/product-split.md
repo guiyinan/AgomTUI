@@ -23,6 +23,19 @@ The TUI shell is reusable across products if the host can provide:
 
 This belongs in `agomtui-runtime`.
 
+What should move:
+- HTML/CSS/JS shell
+- keyboard model
+- theme system
+- generic datagrid / detail / message / dashboard renderers
+- task grouping, confirmation, row-fill, inspector, filter, pager, and modal behaviors
+
+What should not move:
+- hand-authored business screens
+- host-specific workflow sequencing
+- published business metadata for one product
+- screen copy that only makes sense in AgomTradePro
+
 ### 3. Publish workflow
 The metadata compiler is also productizable, but only after splitting collector adapters from Agom-specific heuristics.
 
@@ -71,6 +84,7 @@ Required refactor:
 - theme token system
 - keyboard model
 - generic DataGrid / detail / message renderers
+- generic action execution UX: row-fill, confirmation, inspector, filter, pager, raw drawer
 
 ### Adapters
 - django metadata repository

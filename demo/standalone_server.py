@@ -28,7 +28,16 @@ for package_src in (CORE_SRC, COMPILER_SRC):
     if package_path not in sys.path:
         sys.path.insert(0, package_path)
 
-from agomtui_core import TUI_METADATA_SCHEMA_PATH, validate_tui_metadata  # noqa: E402
+from agomtui_core import (  # noqa: E402
+    TUI_METADATA_SCHEMA_PATH,
+    apply_default_field_values,
+    build_confirmation_required_result,
+    build_missing_fields_result,
+    build_runtime_action_result,
+    missing_required_fields,
+    normalize_runtime_metadata_payload,
+    validate_tui_metadata,
+)
 from agomtui_compiler.collector import (  # noqa: E402
     CollectionContext,
     DjangoContractManifestCollector,
@@ -53,7 +62,9 @@ def utc_now() -> str:
 
 RAW_CANDIDATE = load_json(FIXTURES / "standalone.tui_operation_graph.json")
 RAW_SKILL_RESULT = load_json(FIXTURES / "standalone.skill_result.json")
-VALIDATED_METADATA = validate_tui_metadata(copy.deepcopy(RAW_CANDIDATE))
+VALIDATED_METADATA = normalize_runtime_metadata_payload(
+    validate_tui_metadata(copy.deepcopy(RAW_CANDIDATE))
+)
 OPENAPI_FIXTURE = load_json(FIXTURES / "standalone.openapi.json")
 DJANGO_CONTRACT_FIXTURE = load_json(FIXTURES / "standalone.django_contract_manifest.json")
 
@@ -418,17 +429,15 @@ def paged_rows(rows: list[dict[str, Any]], page: int, page_size: int = 4) -> tup
 
 
 def response(action_key: str, view_model: dict[str, Any], *, raw: dict[str, Any] | None = None) -> dict[str, Any]:
-    return {
-        "action": get_action(action_key),
-        "view_model": view_model,
-        "debug": {
-            "raw_response": raw
-            or {
-                "action_key": action_key,
-                "generated_at": utc_now(),
-            }
+    return build_runtime_action_result(
+        get_action(action_key),
+        view_model,
+        raw_response=raw
+        or {
+            "action_key": action_key,
+            "generated_at": utc_now(),
         },
-    }
+    )
 
 
 def hostify_action_result(result: dict[str, Any], *, api_base: str = "/integration-api/tui") -> dict[str, Any]:
@@ -607,10 +616,15 @@ def handle_action(action_key: str, params: dict[str, Any], confirmed: bool) -> d
             raw={"source": f"/api/demo/accounts/{account['account_id']}/", "record": account, "generated_at": utc_now()},
         )
     if action_key == "execution.accounts.rebalance":
+        action = get_action(action_key)
+        resolved_params = apply_default_field_values(action, params)
+        missing = missing_required_fields(action, resolved_params)
+        if missing:
+            return build_missing_fields_result(action, missing)
         payload = {
-            "account_id": str(params.get("account_id") or ""),
-            "target_weight": str(params.get("target_weight") or ""),
-            "note": str(params.get("note") or ""),
+            "account_id": str(resolved_params.get("account_id") or ""),
+            "target_weight": str(resolved_params.get("target_weight") or ""),
+            "note": str(resolved_params.get("note") or ""),
         }
         preview = message_view(
             "Rebalance Preview",
@@ -630,17 +644,14 @@ def handle_action(action_key: str, params: dict[str, Any], confirmed: bool) -> d
             ],
         )
         if not confirmed:
-            return {
-                "action": get_action(action_key),
-                "confirmation_required": True,
-                "confirmation": {
-                    "title": "Confirm Rebalance",
-                    "message": f"Submit rebalance request for {payload['account_id'] or 'this account'} to {payload['target_weight'] or '?'}%?",
-                    "confirm_label": "Submit Request",
-                    "cancel_label": "Cancel",
-                },
-                "view_model": preview,
-            }
+            return build_confirmation_required_result(
+                action,
+                title="Confirm Rebalance",
+                message=f"Submit rebalance request for {payload['account_id'] or 'this account'} to {payload['target_weight'] or '?'}%?",
+                confirm_label="Submit Request",
+                cancel_label="Cancel",
+                view_model=preview,
+            )
         return response(
             action_key,
             message_view(
@@ -695,9 +706,14 @@ def handle_action(action_key: str, params: dict[str, Any], confirmed: bool) -> d
             raw={"source": f"/api/demo/tasks/{task['task_id']}/", "record": task, "generated_at": utc_now()},
         )
     if action_key == "execution.tasks.retry":
+        action = get_action(action_key)
+        resolved_params = apply_default_field_values(action, params)
+        missing = missing_required_fields(action, resolved_params)
+        if missing:
+            return build_missing_fields_result(action, missing)
         payload = {
-            "task_id": str(params.get("task_id") or ""),
-            "reason": str(params.get("reason") or ""),
+            "task_id": str(resolved_params.get("task_id") or ""),
+            "reason": str(resolved_params.get("reason") or ""),
         }
         preview = message_view(
             "Retry Preview",
@@ -714,17 +730,14 @@ def handle_action(action_key: str, params: dict[str, Any], confirmed: bool) -> d
             ],
         )
         if not confirmed:
-            return {
-                "action": get_action(action_key),
-                "confirmation_required": True,
-                "confirmation": {
-                    "title": "Confirm Retry",
-                    "message": f"Retry blocked task {payload['task_id'] or '?'}?",
-                    "confirm_label": "Retry Task",
-                    "cancel_label": "Keep Blocked",
-                },
-                "view_model": preview,
-            }
+            return build_confirmation_required_result(
+                action,
+                title="Confirm Retry",
+                message=f"Retry blocked task {payload['task_id'] or '?'}?",
+                confirm_label="Retry Task",
+                cancel_label="Keep Blocked",
+                view_model=preview,
+            )
         return response(
             action_key,
             message_view(

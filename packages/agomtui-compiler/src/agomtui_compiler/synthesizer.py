@@ -80,11 +80,13 @@ class PromptOnlySynthesizer:
             "Only use fields, widgets, value types, and action shapes that exist in the schema.",
             "Derive field metadata from code evidence, not retellings.",
             "Do not invent visibility rules, confirmation policy, or business-only color logic.",
+            "Do not invent product-specific screens, workflow sequencing, or business narratives unless evidence requires them.",
+            "Prefer host-agnostic runtime metadata that can be mounted by adapters instead of app-specific page choreography.",
             "Emit one metadata JSON candidate only.",
         ]
         system = (
             "You are a compile-time AgomTUI metadata synthesizer. "
-            "You convert code-owned evidence into one schema-valid metadata graph."
+            "You convert code-owned evidence into one schema-valid, host-agnostic metadata graph."
         )
         user = (
             "Generate one candidate TUI metadata graph.\n\n"

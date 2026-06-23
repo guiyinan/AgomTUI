@@ -33,4 +33,6 @@ Recommended handoff into `agomtui-compiler`:
 4. let the AI skill return one candidate payload
 5. run `agomtui-compile compile-skill-result ...`
 
+The expected skill output is reusable runtime metadata, not a baked-in clone of one host's page flow. Adapter exports should stay structural so different hosts can layer their own vocabulary, navigation choices, and workflow sequencing on top.
+
 Do not copy Agom business vocabulary into the adapter itself. Keep that in the host application or a separate vocabulary extension.

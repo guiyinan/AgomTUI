@@ -45,6 +45,8 @@ Emit a structured skill request payload. This is the contract between the compil
 agomtui-compile skill-request --project-root . --host-kind django --openapi-file examples\metadata\minimal.openapi.json --django-contract-file examples\metadata\minimal.django_contract_manifest.json
 ```
 
+The intended output of that skill is framework-level metadata that the runtime can consume across hosts. It should not default to cloning one product's page map, workflow tour, or business vocabulary unless the supplied evidence explicitly supports that structure.
+
 Validate and publish from a curated candidate file while the LLM backend is still pending:
 
 ```powershell
@@ -102,8 +104,12 @@ Rules:
 
 - `candidate_payload` must be one JSON object
 - the object must already match the AgomTUI schema contract
+- prefer host-agnostic runtime structure over product-specific page choreography
+- only emit workflow steps, business narratives, or screen groupings when they are grounded in collected evidence
 - the compiler will validate and compact it before publish
 - runtime must only consume the published artifact, never raw skill output
+
+In this repository, `examples/metadata/` shows the baseline generic shape for the skill contract. The richer `demo/fixtures/` examples are intentionally demo-specific and should not be treated as the default extraction target for other hosts.
 
 ## Why this package exists
 

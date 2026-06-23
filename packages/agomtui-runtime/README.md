@@ -7,14 +7,30 @@ This folder contains the first extracted runtime shell from AgomTradePro.
 - the current HTML/CSS/JS workbench shell
 - runtime three-theme switching (`A / B / C`)
 - keyboard-driven TUI layout and panel chrome
+- generic action groups, task cards, and confirmation flow
+- generic datagrid / detail / message / dashboard renderers
+- row-fill, inspector, pager, filter, modal, and raw-debug drawer behaviors
+- host-configurable API base via `window.__AGOMTUI_RUNTIME__.apiBase`
 
 ## What is still host-specific
 
-- fetches `/api/tui/*` endpoints directly
-- assumes the host returns Agom-style screen and action payloads
-- still contains Agom-oriented inspector/help vocabulary
+- assumes the host returns the AgomTUI screen/action response contract
+- still carries Agom-oriented copy and screen semantics in the reference assets
+- still reflects the current host payload conventions that came from AgomTradePro
 
 Treat this as the product baseline, not the final host-agnostic runtime.
+
+## What is intentionally not extracted here
+
+This package does **not** carry over:
+
+- AgomTradePro business screen definitions
+- published business metadata graphs
+- Django route wiring, auth, session, or ORM registry logic
+- classic page replacement strategy for a specific host app
+- product-specific workflow ordering or business vocabulary rules
+
+The extraction target is the **runtime framework**, not the full AgomTradePro TUI product surface.
 
 ## Upstream sync
 
