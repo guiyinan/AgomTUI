@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import copy
+import json
 import unittest
 from pathlib import Path
 
 from agomtui_compiler.cli import StaticCandidateSynthesizer, _build_collectors, _build_request_payload, build_parser
 from agomtui_compiler.collector import CollectionContext, DjangoContractManifestCollector, OpenApiSpecCollector
 from agomtui_compiler.synthesizer import JsonFileSkillBackend, SkillBackedSynthesizer
+from agomtui_compiler.usability import check_tui_metadata_usability
 from agomtui_compiler.workflow import CompilerWorkflow
 
 
@@ -70,6 +73,65 @@ class CollectorTests(unittest.TestCase):
 
         self.assertEqual(args.command, "validate-metadata")
         self.assertFalse(hasattr(args, "openapi_file"))
+
+    def test_usability_command_does_not_require_evidence_sources(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "check-usability",
+                "--metadata-file",
+                str(EXAMPLES / "minimal.tui_operation_graph.json"),
+            ]
+        )
+
+        self.assertEqual(args.command, "check-usability")
+        self.assertFalse(args.fail_on_warning)
+        self.assertFalse(hasattr(args, "openapi_file"))
+
+    def test_usability_checker_accepts_current_examples_without_errors(self) -> None:
+        for name in (
+            "minimal.tui_operation_graph.json",
+            "rich_components.tui_operation_graph.json",
+            "generic_operations.tui_operation_graph.json",
+        ):
+            with self.subTest(name=name):
+                payload = json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
+                result = check_tui_metadata_usability(payload)
+                self.assertTrue(result.ok)
+                self.assertEqual(result.error_count, 0)
+
+    def test_usability_checker_reports_blocking_operator_gaps(self) -> None:
+        payload = json.loads((EXAMPLES / "minimal.tui_operation_graph.json").read_text(encoding="utf-8"))
+        unusable = copy.deepcopy(payload)
+        unusable["screens"].append(
+            {
+                "key": "overview.empty",
+                "label": "Empty",
+                "module_key": "overview",
+                "group": "workbench",
+                "summary": "No usable affordances.",
+                "view_type": "status",
+            }
+        )
+        unusable["actions"][0]["view_type"] = "chart"
+        unusable["actions"][0]["view_model"] = {"kind": "chart", "data_path": "data.rows"}
+        unusable["actions"][0]["fields"] = [
+            {
+                "key": "tenant_id",
+                "label": "Tenant ID",
+                "input_type": "hidden",
+                "required": True,
+            }
+        ]
+
+        result = check_tui_metadata_usability(unusable)
+
+        self.assertFalse(result.ok)
+        self.assertGreaterEqual(result.error_count, 3)
+        codes = {issue.code for issue in result.issues}
+        self.assertIn("screen.empty", codes)
+        self.assertIn("view_model.missing_renderer_path", codes)
+        self.assertIn("field.hidden_required_without_default", codes)
 
     def test_compile_applies_manual_overrides_before_publish(self) -> None:
         workflow = CompilerWorkflow(

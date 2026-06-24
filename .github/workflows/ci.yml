@@ -50,3 +50,12 @@ jobs:
 
       - name: Validate generic operations metadata
         run: python -m agomtui_compiler.cli validate-metadata --metadata-file examples/metadata/generic_operations.tui_operation_graph.json
+
+      - name: Check minimal metadata usability
+        run: python -m agomtui_compiler.cli check-usability --metadata-file examples/metadata/minimal.tui_operation_graph.json
+
+      - name: Check rich component metadata usability
+        run: python -m agomtui_compiler.cli check-usability --metadata-file examples/metadata/rich_components.tui_operation_graph.json
+
+      - name: Check generic operations metadata usability
+        run: python -m agomtui_compiler.cli check-usability --metadata-file examples/metadata/generic_operations.tui_operation_graph.json

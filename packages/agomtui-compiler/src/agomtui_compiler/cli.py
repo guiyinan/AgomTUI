@@ -21,6 +21,7 @@ from .synthesizer import (
     PromptOnlySynthesizer,
     SkillBackedSynthesizer,
 )
+from .usability import check_tui_metadata_usability
 from .workflow import CompilerWorkflow
 
 
@@ -105,6 +106,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate_cmd = subparsers.add_parser("validate-metadata", help="Validate one TUI metadata JSON file")
     validate_cmd.add_argument("--metadata-file", required=True, help="Metadata JSON file to validate")
+
+    usability_cmd = subparsers.add_parser(
+        "check-usability",
+        help="Run automated usability checks against one TUI metadata JSON file",
+    )
+    usability_cmd.add_argument("--metadata-file", required=True, help="Metadata JSON file to inspect")
+    usability_cmd.add_argument(
+        "--fail-on-warning",
+        action="store_true",
+        help="Return a non-zero exit code when usability warnings are present",
+    )
 
     compact_cmd = subparsers.add_parser("compact-metadata", help="Validate and compact one TUI metadata JSON file")
     compact_cmd.add_argument("--metadata-file", required=True, help="Metadata JSON file to validate and compact")
@@ -199,6 +211,15 @@ def main() -> int:
                 indent=2,
             )
         )
+        return 0
+
+    if args.command == "check-usability":
+        result = check_tui_metadata_usability(_load_json_file(Path(args.metadata_file).resolve()))
+        print(json.dumps(result.as_dict(), ensure_ascii=False, indent=2))
+        if result.error_count:
+            return 1
+        if args.fail_on_warning and result.warning_count:
+            return 1
         return 0
 
     if args.command == "compact-metadata":

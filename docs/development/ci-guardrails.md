@@ -20,6 +20,9 @@ CI 使用 Python `3.11`，与当前包配置中的 `requires-python = ">=3.11"` 
 - `examples/metadata/minimal.tui_operation_graph.json` schema 校验
 - `examples/metadata/rich_components.tui_operation_graph.json` schema 校验
 - `examples/metadata/generic_operations.tui_operation_graph.json` schema 校验
+- `examples/metadata/minimal.tui_operation_graph.json` 可用性检查
+- `examples/metadata/rich_components.tui_operation_graph.json` 可用性检查
+- `examples/metadata/generic_operations.tui_operation_graph.json` 可用性检查
 
 ## 第一版依赖策略
 
@@ -37,5 +40,6 @@ CI 使用 Python `3.11`，与当前包配置中的 `requires-python = ">=3.11"` 
 ## 失败处理
 
 - metadata 校验失败：先确认 artifact 是否被直接手改；需要保留的终态调整应进入 override。
+- metadata 可用性检查失败：优先检查 screen 是否有 action / panel、默认 action 是否跨 screen、chart / host_slot view_model 是否缺路径、必填隐藏字段是否缺默认值。
 - governed action 测试失败：优先检查 confirmation、reauth、audit 是否被绕过。
 - Django host 测试失败：优先确认 adapter contract、metadata endpoint 和 action endpoint 是否仍符合 runtime 预期。

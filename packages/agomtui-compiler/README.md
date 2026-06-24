@@ -59,6 +59,14 @@ Validate a metadata file without publishing:
 agomtui-compile validate-metadata --metadata-file examples\metadata\minimal.tui_operation_graph.json
 ```
 
+Run automated usability checks against a metadata file:
+
+```powershell
+agomtui-compile check-usability --metadata-file examples\metadata\minimal.tui_operation_graph.json
+```
+
+The usability checker validates the metadata contract first, then reports operator-facing gaps in screen navigation, dashboard panel wiring, action view models, and fields. `error` exits non-zero; `warning` is reported but does not fail unless `--fail-on-warning` is passed.
+
 Validate and compact a metadata file without running collectors:
 
 ```powershell

@@ -18,6 +18,7 @@ from .synthesizer import (
     SkillBackend,
     SkillMessage,
 )
+from .usability import UsabilityCheckResult, UsabilityIssue, check_tui_metadata_usability
 from .workflow import CompilerWorkflow, CompilerWorkflowResult
 
 __all__ = [
@@ -40,4 +41,7 @@ __all__ = [
     "SkillBackend",
     "SkillBackedSynthesizer",
     "SkillMessage",
+    "UsabilityCheckResult",
+    "UsabilityIssue",
+    "check_tui_metadata_usability",
 ]
