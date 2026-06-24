@@ -1,6 +1,6 @@
-# agomtui-runtime reference
+# agomtui-runtime
 
-This folder contains the first extracted runtime shell from AgomTradePro.
+This package contains the first extracted runtime shell from AgomTradePro plus small host helpers for embedding it.
 
 ## What it is
 
@@ -15,6 +15,17 @@ This folder contains the first extracted runtime shell from AgomTradePro.
 - row-fill, inspector, pager, filter, modal, and raw-debug drawer behaviors
 - host-configurable API base via `window.__AGOMTUI_RUNTIME__.apiBase`
 - optional host slot HTML insertion via `window.__AGOMTUI_RUNTIME__.allowHostHtmlSlots`; disabled by default
+
+## Embedding helper
+
+`agomtui_runtime` exposes two minimal helpers:
+
+- `render_runtime_html(...)`: renders the reference workbench HTML with host-owned `api_base`, `asset_base`, title, brand label, and home link.
+- `runtime_asset(relative)`: safely serves CSS / JS assets under the extracted `reference/static/` directory.
+
+The helpers are intentionally small. The host still owns auth, routing, metadata repository, action execution, and audit storage.
+
+See `examples/hosts/stdlib_host.py` for a non-Django host that uses only Python's standard library plus the AgomTUI core/runtime packages.
 
 ## What is still host-specific
 

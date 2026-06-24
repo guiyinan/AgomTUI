@@ -16,14 +16,14 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).resolve().parents[1]
 CORE_SRC = ROOT / "packages" / "agomtui-core" / "src"
 COMPILER_SRC = ROOT / "packages" / "agomtui-compiler" / "src"
-RUNTIME_REF = ROOT / "packages" / "agomtui-runtime" / "reference"
+RUNTIME_SRC = ROOT / "packages" / "agomtui-runtime" / "src"
 FIXTURES = ROOT / "demo" / "fixtures"
 HOST = "127.0.0.1"
 PORT = 8020
 DJANGO_HOST = "127.0.0.1"
 DJANGO_PORT = 8030
 
-for package_src in (CORE_SRC, COMPILER_SRC):
+for package_src in (CORE_SRC, COMPILER_SRC, RUNTIME_SRC):
     package_path = str(package_src)
     if package_path not in sys.path:
         sys.path.insert(0, package_path)
@@ -51,6 +51,8 @@ from agomtui_compiler.synthesizer import (  # noqa: E402
     SkillBackedSynthesizer,
 )
 from agomtui_compiler.workflow import CompilerWorkflow  # noqa: E402
+from agomtui_runtime import render_runtime_html as render_embeddable_runtime_html  # noqa: E402
+from agomtui_runtime import runtime_asset  # noqa: E402
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -1226,36 +1228,18 @@ def render_runtime_html(
     api_base: str,
     asset_base: str = "/standalone/static",
 ) -> bytes:
-    source = (RUNTIME_REF / "tui_workbench.reference.html").read_text(encoding="utf-8")
-    runtime_config = json.dumps({"apiBase": api_base}, ensure_ascii=False)
-    runtime_config_tag = f'<script>window.__AGOMTUI_RUNTIME__ = {runtime_config};</script>'
-    normalized_asset_base = asset_base.rstrip("/")
-    css_version = int((RUNTIME_REF / "static" / "css" / "tui-workbench.css").stat().st_mtime)
-    js_version = int((RUNTIME_REF / "static" / "js" / "tui-workbench.js").stat().st_mtime)
-    source = source.replace('href="/tui/"', f'href="{home_href}"')
-    source = source.replace(">AgomTUI<", f">{esc(brand_label)}<")
-    source = source.replace(
-        "./static/css/tui-workbench.css",
-        f"{normalized_asset_base}/css/tui-workbench.css?v={css_version}",
+    return render_embeddable_runtime_html(
+        title=title,
+        home_href=home_href,
+        brand_label=brand_label,
+        api_base=api_base,
+        asset_base=asset_base,
     )
-    source = source.replace(
-        '<script src="./static/js/tui-workbench.js"></script>',
-        f"{runtime_config_tag}\n    <script src=\"{normalized_asset_base}/js/tui-workbench.js?v={js_version}\"></script>",
-    )
-    source = source.replace("<title>AgomTUI Workbench</title>", f"<title>{esc(title)}</title>")
-    return source.encode("utf-8")
 
 
 def runtime_asset_payload(relative: str) -> tuple[bytes, str]:
-    asset_path = RUNTIME_REF / "static" / relative
-    if not asset_path.exists() or not asset_path.is_file():
-        raise FileNotFoundError(relative)
-    mime = "text/plain; charset=utf-8"
-    if asset_path.suffix == ".css":
-        mime = "text/css; charset=utf-8"
-    elif asset_path.suffix == ".js":
-        mime = "application/javascript; charset=utf-8"
-    return asset_path.read_bytes(), mime
+    asset = runtime_asset(relative)
+    return asset.body, asset.content_type
 
 
 def local_url(port: int, path: str = "/") -> str:

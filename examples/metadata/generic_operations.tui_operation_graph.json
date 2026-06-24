@@ -1,0 +1,162 @@
+{
+  "schema_version": "tui-metadata.v3",
+  "version": "agomtui-generic-operations.v0",
+  "registry_key": "generic-operations",
+  "default_screen": "operations.accounts",
+  "interaction_model": "published-metadata-to-pc-tools",
+  "groups": [
+    {"key": "operations", "label": "Operations"}
+  ],
+  "modules": [
+    {
+      "key": "operations",
+      "label": "Operations",
+      "group": "operations",
+      "summary": "Host-neutral internal operations examples."
+    }
+  ],
+  "screens": [
+    {
+      "key": "operations.accounts",
+      "label": "Accounts",
+      "module_key": "operations",
+      "group": "operations",
+      "summary": "List accounts, inspect details, and submit governed changes.",
+      "view_type": "datagrid",
+      "default_action_key": "operations.accounts.list",
+      "dashboard_panels": [
+        {
+          "key": "accounts",
+          "title": "Account List",
+          "kind": "datagrid",
+          "action_key": "operations.accounts.list",
+          "columns": [
+            {"key": "account_id", "label": "Account"},
+            {"key": "status", "label": "Status"},
+            {"key": "limit", "label": "Limit"}
+          ]
+        }
+      ]
+    },
+    {
+      "key": "operations.insights",
+      "label": "Insights",
+      "module_key": "operations",
+      "group": "operations",
+      "summary": "Render host-neutral KPI trend metadata.",
+      "view_type": "kpi_trend",
+      "default_action_key": "operations.insights.kpi"
+    }
+  ],
+  "actions": [
+    {
+      "key": "operations.accounts.list",
+      "label": "List Accounts",
+      "method": "GET",
+      "endpoint": "/api/tui-example/accounts/",
+      "intent": "list_accounts",
+      "screen_key": "operations.accounts",
+      "view_type": "datagrid",
+      "risk": "read",
+      "task_tier": "primary",
+      "sequence": 10,
+      "view_model": {
+        "kind": "datagrid",
+        "rows_path": "items",
+        "total_path": "total",
+        "page_path": "page"
+      }
+    },
+    {
+      "key": "operations.accounts.detail",
+      "label": "Account Detail",
+      "method": "GET",
+      "endpoint": "/api/tui-example/accounts/detail/",
+      "intent": "read_account_detail",
+      "screen_key": "operations.accounts",
+      "view_type": "detail",
+      "risk": "read",
+      "task_tier": "support",
+      "sequence": 20,
+      "fields": [
+        {
+          "key": "account_id",
+          "label": "Account ID",
+          "input_type": "text",
+          "value_type": "string",
+          "required": true,
+          "binding": "query",
+          "placeholder": "ACC-1001"
+        }
+      ],
+      "view_model": {
+        "kind": "detail",
+        "title_path": "account.name",
+        "status_path": "account.status"
+      }
+    },
+    {
+      "key": "operations.accounts.adjust-limit",
+      "label": "Adjust Limit",
+      "method": "POST",
+      "endpoint": "/api/tui-example/accounts/adjust-limit/",
+      "intent": "adjust_account_limit",
+      "screen_key": "operations.accounts",
+      "view_type": "message",
+      "risk": "write",
+      "confirmation_required": true,
+      "audit_required": true,
+      "sensitive_level": "high",
+      "executor": "adjust_account_limit",
+      "task_tier": "operation",
+      "sequence": 30,
+      "fields": [
+        {
+          "key": "account_id",
+          "label": "Account ID",
+          "input_type": "text",
+          "value_type": "string",
+          "required": true,
+          "binding": "body",
+          "placeholder": "ACC-1001"
+        },
+        {
+          "key": "limit",
+          "label": "New Limit",
+          "input_type": "number",
+          "value_type": "decimal",
+          "required": true,
+          "binding": "body",
+          "min": 0,
+          "unit": "USD"
+        }
+      ],
+      "view_model": {
+        "kind": "message"
+      }
+    },
+    {
+      "key": "operations.insights.kpi",
+      "label": "KPI Trend",
+      "method": "GET",
+      "endpoint": "/api/tui-example/insights/kpi/",
+      "intent": "read_kpi_trend",
+      "screen_key": "operations.insights",
+      "view_type": "kpi_trend",
+      "risk": "read",
+      "task_tier": "primary",
+      "sequence": 10,
+      "view_model": {
+        "kind": "kpi_trend",
+        "data_path": "series",
+        "label_path": "label",
+        "value_path": "value"
+      }
+    }
+  ],
+  "principles": [
+    "Runtime reads published metadata only.",
+    "Host owns business execution, auth, and audit storage.",
+    "Governed write actions require confirmation and audit."
+  ]
+}

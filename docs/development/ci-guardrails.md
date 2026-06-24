@@ -15,9 +15,11 @@ CI 使用 Python `3.11`，与当前包配置中的 `requires-python = ">=3.11"` 
 
 - core runtime contract tests
 - compiler tests
+- runtime asset helper and non-Django host example tests
 - Django host tests
 - `examples/metadata/minimal.tui_operation_graph.json` schema 校验
 - `examples/metadata/rich_components.tui_operation_graph.json` schema 校验
+- `examples/metadata/generic_operations.tui_operation_graph.json` schema 校验
 
 ## 第一版依赖策略
 

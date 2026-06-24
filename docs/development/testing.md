@@ -7,13 +7,13 @@
 在仓库根目录设置包源码路径：
 
 ```powershell
-$env:PYTHONPATH="$PWD\packages\agomtui-core\src;$PWD\packages\agomtui-compiler\src"
+$env:PYTHONPATH="$PWD\packages\agomtui-core\src;$PWD\packages\agomtui-compiler\src;$PWD\packages\agomtui-runtime\src"
 ```
 
 Linux / GitHub Actions 使用冒号分隔：
 
 ```bash
-export PYTHONPATH="$PWD/packages/agomtui-core/src:$PWD/packages/agomtui-compiler/src"
+export PYTHONPATH="$PWD/packages/agomtui-core/src:$PWD/packages/agomtui-compiler/src:$PWD/packages/agomtui-runtime/src"
 ```
 
 ## 单元测试
@@ -28,6 +28,12 @@ Compiler tests：
 
 ```powershell
 python -m unittest discover packages\agomtui-compiler\tests
+```
+
+Runtime asset and non-Django host example tests：
+
+```powershell
+python -m unittest discover packages\agomtui-runtime\tests
 ```
 
 Django host tests：
@@ -50,8 +56,14 @@ Rich component metadata：
 python -m agomtui_compiler.cli validate-metadata --metadata-file examples\metadata\rich_components.tui_operation_graph.json
 ```
 
+Generic operations metadata：
+
+```powershell
+python -m agomtui_compiler.cli validate-metadata --metadata-file examples\metadata\generic_operations.tui_operation_graph.json
+```
+
 ## 验收标准
 
-- core tests、compiler tests、Django host tests 全部通过。
-- `minimal` 和 `rich_components` 两个示例 metadata 都通过 schema 校验。
+- core tests、compiler tests、runtime tests、Django host tests 全部通过。
+- `minimal`、`rich_components` 和 `generic_operations` 示例 metadata 都通过 schema 校验。
 - 修改 governance、schema、collector 或 adapter 行为时，测试应覆盖对应 contract。

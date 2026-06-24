@@ -14,6 +14,11 @@
 - 测试命令：[testing.md](testing.md)
 - CI 护栏：[ci-guardrails.md](ci-guardrails.md)
 
+## Host 示例
+
+- Django host demo：`demo/django_host/`
+- 非 Django 标准库 host：`examples/hosts/stdlib_host.py`
+
 ## 第一版质量策略
 
 第一版先使用最小可落地护栏：现有 unittest、Django host tests、metadata schema 校验。暂不引入 Ruff、Black、mypy、coverage 或 pre-commit，避免在产品边界尚在快速收敛时增加额外维护面。

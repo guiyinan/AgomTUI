@@ -8,6 +8,15 @@ AgomTUI is for system developers who already have backend APIs but still need an
 
 The goal is simple: generate useful internal-tool UI with near-zero frontend coding and much less integration pain.
 
+## Quick prompt
+
+Give this repository URL to Codex / Claude Code so it can understand the project boundaries and contract before wiring your backend:
+
+```text
+Read https://github.com/guiyinan/AgomTUI and understand the AgomTUI metadata, runtime, compiler, and host adapter boundaries.
+Using my backend repository/API, generate or integrate a working internal operations TUI that follows the AgomTUI contract, including the necessary tests and docs.
+```
+
 ## Documentation
 
 - [Development docs](docs/README.md)
@@ -163,11 +172,12 @@ In other words: Django/Python are provided integration paths, not a frontend fra
 ## What is in this repo
 
 - `packages/agomtui-core/`: schema, validator, runtime contracts, and generic server-side runtime helpers
-- `packages/agomtui-runtime/`: extracted browser shell assets and renderer reference
+- `packages/agomtui-runtime/`: extracted browser shell assets, renderer reference, and embeddable asset helpers
 - `packages/agomtui-compiler/`: compile-time collector / AI synthesizer / validator / publisher skeleton
 - `demo/`: runnable standalone demo, compiler walkthrough, integration demo, and migration pages
 - `adapters/django/`: notes for the first host adapter
-- `examples/metadata/`: minimal metadata fixtures
+- `examples/metadata/`: minimal, rich-component, and generic-operations metadata fixtures
+- `examples/hosts/`: host integration examples, including a non-Django standard-library host
 - `docs/`: development docs, architecture notes, migration plan, and CI guardrails
 
 ## For builders
@@ -241,6 +251,14 @@ If you want the Django host separately:
 ```powershell
 python demo\django_host\manage.py runserver 127.0.0.1:8030 --noreload
 ```
+
+If you want a non-Django host example:
+
+```powershell
+python examples\hosts\stdlib_host.py
+```
+
+Then open `http://127.0.0.1:8040/`.
 
 ### 2. Run tests
 

@@ -12,7 +12,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: ${{ github.workspace }}/packages/agomtui-core/src:${{ github.workspace }}/packages/agomtui-compiler/src
+      PYTHONPATH: ${{ github.workspace }}/packages/agomtui-core/src:${{ github.workspace }}/packages/agomtui-compiler/src:${{ github.workspace }}/packages/agomtui-runtime/src
 
     steps:
       - name: Check out repository
@@ -34,6 +34,9 @@ jobs:
       - name: Run compiler tests
         run: python -m unittest discover packages/agomtui-compiler/tests
 
+      - name: Run runtime asset tests
+        run: python -m unittest discover packages/agomtui-runtime/tests
+
       - name: Run Django host tests
         run: python demo/django_host/manage.py test django_host
 
@@ -42,3 +45,6 @@ jobs:
 
       - name: Validate rich component metadata
         run: python -m agomtui_compiler.cli validate-metadata --metadata-file examples/metadata/rich_components.tui_operation_graph.json
+
+      - name: Validate generic operations metadata
+        run: python -m agomtui_compiler.cli validate-metadata --metadata-file examples/metadata/generic_operations.tui_operation_graph.json
