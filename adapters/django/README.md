@@ -8,12 +8,6 @@ The first practical host adapter for AgomTUI should provide:
 - template view that serves the runtime shell
 - compile-time contract export for Django models and DDD aggregates
 
-Current AgomTradePro files that should inform this adapter:
-- `apps/terminal/infrastructure/tui_metadata_repository.py`
-- `apps/terminal/infrastructure/tui_adapters.py`
-- `apps/terminal/interface/api_views.py`
-- `apps/terminal/interface/views.py`
-
 ## Compile-time export requirement
 
 The adapter should export machine-readable evidence from code, not product-manager prose.
@@ -35,4 +29,4 @@ Recommended handoff into `agomtui-compiler`:
 
 The expected skill output is reusable runtime metadata, not a baked-in clone of one host's page flow. Adapter exports should stay structural so different hosts can layer their own vocabulary, navigation choices, and workflow sequencing on top.
 
-Do not copy Agom business vocabulary into the adapter itself. Keep that in the host application or a separate vocabulary extension.
+Do not copy host-specific business vocabulary into the adapter itself. Keep that in the host application or a separate vocabulary extension.

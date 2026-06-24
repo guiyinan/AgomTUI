@@ -1,27 +1,24 @@
-# AgomTradePro Sync Boundary
+# Runtime Shell Sync Boundary
 
-This directory is the single source of truth for **one-way sync** from `agomTradePro` into `AgomTUI`.
+This directory documents the repository's internal one-way sync boundary for runtime shell reference assets.
 
-## Directory convention
+## Directory Convention
 
-- `sync/agomtradepro/runtime-shell.manifest.json`
-  - allowlist of upstream source files and local targets
-  - defines which transforms are permitted
-- `scripts/sync_from_agomtradepro.py`
-  - executes the sync
-  - refuses to write outside the allowed target prefixes
+- the manifest in this directory is the allowlist of upstream source files and local targets
+- the repository sync script executes the transfer and refuses to write outside the allowed target prefixes
+- machine-specific paths belong in the local config file, not in the committed manifest
 
-## What may sync
+## What May Sync
 
-Only runtime shell reference assets may sync from `agomTradePro`:
+Only runtime shell reference assets may move through this mechanism:
 
 - `packages/agomtui-runtime/reference/tui_workbench.reference.html`
 - `packages/agomtui-runtime/reference/static/css/tui-workbench.css`
 - `packages/agomtui-runtime/reference/static/js/tui-workbench.js`
 
-## What may not sync
+## What May Not Sync
 
-Do not pull these areas across from `agomTradePro` through this mechanism:
+Do not pull these areas through this mechanism:
 
 - `packages/agomtui-core/`
 - `packages/agomtui-compiler/`
@@ -29,85 +26,35 @@ Do not pull these areas across from `agomTradePro` through this mechanism:
 - `demo/`
 - `docs/`
 
-Those areas are the independent product boundary for `AgomTUI`.
+Those areas are the independent AgomTUI product boundary.
 
-## Configuration
-
-Machine-specific paths do not belong in the committed manifest.
-
-Use a local config file instead:
-
-- template: `sync/agomtradepro/runtime-shell.config.example.json`
-- local override: `sync/agomtradepro/runtime-shell.config.json`
-
-The local override file is intentionally gitignored.
-
-## Source resolution
+## Source Resolution
 
 The sync executor resolves source material in this order:
 
-1. local `agomTradePro` working tree
-2. git ref from a readable `agomTradePro` repository
+1. configured local working tree
+2. configured git ref from a readable repository
 3. optional remote fetch cache
 
-That means:
-
-- if you have local uncommitted TUI changes, sync reads those first
-- if you do not have the local file, it falls back to a git snapshot
-- if you do not have a local repo path, you can provide a remote URL and fetch ref
+That means local uncommitted runtime-shell changes can be reviewed before falling back to a git snapshot or remote cache.
 
 ## Usage
 
-Dry run:
+Use the sync script from the repository root.
 
-```powershell
-python scripts\sync_from_agomtradepro.py --check
-```
+Recommended flow:
 
-Create a local config first:
+1. run a dry check
+2. create a local config from the example if needed
+3. apply the sync
+4. compare against the configured baseline when reviewing larger updates
+5. list the resolved source configuration when debugging local setup
 
-```powershell
-Copy-Item sync\agomtradepro\runtime-shell.config.example.json sync\agomtradepro\runtime-shell.config.json
-```
-
-Apply:
-
-```powershell
-python scripts\sync_from_agomtradepro.py --apply
-```
-
-Override the upstream path when needed:
-
-```powershell
-python scripts\sync_from_agomtradepro.py --source-root D:\githv\agomTradePro --apply
-```
-
-Compare the preferred source against a baseline ref:
-
-```powershell
-python scripts\sync_from_agomtradepro.py --compare-baseline --baseline-ref HEAD
-```
-
-Use a remote fallback when no local checkout is available:
-
-```powershell
-python scripts\sync_from_agomtradepro.py `
-  --remote-url https://github.com/your-org/agomTradePro.git `
-  --remote-fetch-ref dev/next-development `
-  --baseline-ref dev/next-development `
-  --compare-baseline
-```
-
-List the resolved source configuration:
-
-```powershell
-python scripts\sync_from_agomtradepro.py --list
-```
-
-## Review rule
+## Review Rule
 
 Every sync is expected to be:
 
 1. run through the manifest
 2. reviewed as a normal diff
 3. followed by demo and test verification
+

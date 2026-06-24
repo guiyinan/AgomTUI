@@ -1,6 +1,6 @@
 # agomtui-core
 
-Framework-free core extracted from the AgomTradePro TUI workbench.
+Framework-free core for AgomTUI metadata validation, runtime contracts, and host-side execution helpers.
 
 ## Included
 

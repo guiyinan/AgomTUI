@@ -1,6 +1,6 @@
 # agomtui-runtime
 
-This package contains the first extracted runtime shell from AgomTradePro plus small host helpers for embedding it.
+This package contains the browser runtime shell plus small host helpers for embedding it.
 
 ## What it is
 
@@ -30,8 +30,8 @@ See `examples/hosts/stdlib_host.py` for a non-Django host that uses only Python'
 ## What is still host-specific
 
 - assumes the host returns the AgomTUI screen/action response contract
-- still carries Agom-oriented copy and screen semantics in the reference assets
-- still reflects the current host payload conventions that came from AgomTradePro
+- may still carry demo-oriented copy and screen semantics in the reference assets
+- may still reflect host payload conventions that should be normalized into public contracts over time
 
 Treat this as the product baseline, not the final host-agnostic runtime.
 
@@ -49,19 +49,16 @@ The server-side host adapter must still route the replayed request through `Gove
 
 This package does **not** carry over:
 
-- AgomTradePro business screen definitions
+- product-specific business screen definitions
 - published business metadata graphs
 - Django route wiring, auth, session, or ORM registry logic
 - classic page replacement strategy for a specific host app
 - product-specific workflow ordering or business vocabulary rules
 
-The extraction target is the **runtime framework**, not the full AgomTradePro TUI product surface.
+The target is the **runtime framework**, not a full business application surface.
 
 ## Upstream sync
 
-The reference shell in this package is maintained through the `agomTradePro -> AgomTUI` one-way sync manifest:
-
-- manifest: `sync/agomtradepro/runtime-shell.manifest.json`
-- executor: `scripts/sync_from_agomtradepro.py`
+The reference shell in this package may be refreshed through the repository's internal one-way sync workflow.
 
 Only the reference HTML/CSS/JS assets under `packages/agomtui-runtime/reference/` should move through that sync path.
