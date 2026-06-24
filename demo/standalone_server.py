@@ -1276,6 +1276,13 @@ def overview_page() -> bytes:
       </a>
     </section>
     """
+    run_from_repo = {
+        "command": "python demo\\standalone_server.py",
+        "url": f"http://{HOST}:{PORT}/",
+        "standalone_entry": f"http://{HOST}:{PORT}/standalone/",
+        "integration_entry": f"http://{HOST}:{PORT}/integration/",
+        "integration_runtime_entry": f"http://{HOST}:{PORT}/integration-tui/",
+    }
     body = f"""
     <section class="hero">
       <div class="eyebrow">Product Surface</div>
@@ -1300,7 +1307,7 @@ def overview_page() -> bytes:
       </div>
       <div class="panel">
         <h2 class="section-title">Run from the repo</h2>
-        {json_html({"command": "python demo\\\\standalone_server.py", "url": f"http://{HOST}:{PORT}/", "standalone_entry": f"http://{HOST}:{PORT}/standalone/", "integration_entry": f"http://{HOST}:{PORT}/integration/", "integration_runtime_entry": f"http://{HOST}:{PORT}/integration-tui/"})}
+        {json_html(run_from_repo)}
       </div>
     </section>
     """
