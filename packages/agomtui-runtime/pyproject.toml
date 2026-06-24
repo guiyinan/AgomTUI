@@ -8,6 +8,10 @@ version = "0.1.0"
 description = "Embeddable runtime asset helpers for AgomTUI"
 readme = "README.md"
 requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

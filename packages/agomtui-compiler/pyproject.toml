@@ -8,8 +8,12 @@ version = "0.1.0"
 description = "Evidence-driven metadata compiler skeleton for AgomTUI"
 readme = "README.md"
 requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
 dependencies = [
     "agomtui-core",
+]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
 ]
 
 [project.scripts]

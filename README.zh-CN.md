@@ -1,5 +1,7 @@
 # AgomTUI
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
+
 [English](./README.md)
 
 **把后端 API 和业务逻辑直接变成可用的前端操作台 TUI。**
