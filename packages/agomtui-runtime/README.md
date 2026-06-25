@@ -10,17 +10,18 @@ This package contains the browser runtime shell plus small host helpers for embe
 - generic action groups, task cards, and confirmation flow
 - governed action protocol handling for missing fields, confirmation, and password challenge responses
 - generic datagrid / detail / message / dashboard renderers
-- built-in rich metadata renderers for `chart`, `kpi_trend`, `table_chart`, and safe `host_slot` views
+- built-in rich metadata renderers for `chart`, `image`, `kpi_trend`, `table_chart`, and safe `host_slot` views
 - renderer extension registration via `window.AgomTUIRenderers.register(name, rendererFn)` for host-owned renderers such as ECharts, CodeMirror, Mermaid, or Markdown
 - row-fill, inspector, pager, filter, modal, and raw-debug drawer behaviors
 - host-configurable API base via `window.__AGOMTUI_RUNTIME__.apiBase`
+- host-configurable SVG data URL image rendering via `window.__AGOMTUI_RUNTIME__.allowSvgDataImages`; enabled by default
 - optional host slot HTML insertion via `window.__AGOMTUI_RUNTIME__.allowHostHtmlSlots`; disabled by default
 
 ## Embedding helper
 
 `agomtui_runtime` exposes two minimal helpers:
 
-- `render_runtime_html(...)`: renders the reference workbench HTML with host-owned `api_base`, `asset_base`, title, brand label, and home link.
+- `render_runtime_html(...)`: renders the reference workbench HTML with host-owned `api_base`, `asset_base`, title, brand label, home link, and runtime toggles such as `allow_svg_data_images`.
 - `runtime_asset(relative)`: safely serves CSS / JS assets under the extracted `reference/static/` directory.
 
 The helpers are intentionally small. The host still owns auth, routing, metadata repository, action execution, and audit storage.

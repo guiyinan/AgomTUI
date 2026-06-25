@@ -1800,6 +1800,63 @@ a {
     fill: var(--tui-panel);
 }
 
+.tui-image-view {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 220px;
+}
+
+.tui-image-view.is-compact {
+    min-height: 140px;
+}
+
+.tui-image-frame {
+    display: grid;
+    place-items: center;
+    min-height: 150px;
+    width: 100%;
+    border: 1px solid var(--tui-border-dim);
+    border-radius: 0;
+    background:
+        linear-gradient(45deg, color-mix(in srgb, var(--tui-border-dim) 30%, transparent) 25%, transparent 25%),
+        linear-gradient(-45deg, color-mix(in srgb, var(--tui-border-dim) 30%, transparent) 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--tui-border-dim) 30%, transparent) 75%),
+        linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--tui-border-dim) 30%, transparent) 75%);
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    background-size: 16px 16px;
+    cursor: zoom-in;
+}
+
+.tui-image-frame:hover,
+.tui-image-frame:focus {
+    border-color: var(--tui-accent);
+    box-shadow: inset 0 0 0 1px var(--tui-accent);
+    outline: 0;
+}
+
+.tui-image-view.is-compact .tui-image-frame {
+    min-height: 96px;
+}
+
+.tui-image-frame img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    max-height: min(62vh, 520px);
+    object-fit: contain;
+}
+
+.tui-image-view.is-compact .tui-image-frame img {
+    max-height: 160px;
+}
+
+.tui-image-view figcaption {
+    color: var(--tui-muted);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
 .tui-kpi-view {
     min-height: 120px;
 }
@@ -2092,7 +2149,7 @@ a {
     z-index: 28;
     display: grid;
     place-items: center;
-    padding: 28px;
+    padding: clamp(12px, 3vw, 28px);
     background: var(--tui-overlay);
 }
 
@@ -2101,41 +2158,143 @@ a {
 }
 
 .tui-modal-window {
-    width: min(760px, calc(100vw - 48px));
-    max-height: min(640px, calc(100vh - 64px));
+    width: min(640px, calc(100vw - 32px));
+    max-height: min(640px, calc(100vh - 40px));
     min-width: 0;
-    max-width: calc(100vw - 48px);
+    max-width: calc(100vw - 32px);
     display: flex;
     flex-direction: column;
     border: 1px solid var(--tui-border);
     background: var(--tui-panel);
     color: var(--tui-text);
-    box-shadow: none;
+    box-shadow: 0 0 0 1px var(--tui-bg-deep), 0 14px 32px rgba(0, 0, 0, 0.36);
+}
+
+.tui-modal.is-image-preview {
+    background: color-mix(in srgb, var(--tui-bg) 82%, rgba(0, 0, 0, 0.82));
+}
+
+.tui-modal.is-image-preview .tui-modal-window {
+    width: min(1120px, calc(100vw - 36px));
+    max-height: min(860px, calc(100vh - 36px));
+    background: color-mix(in srgb, var(--tui-panel) 88%, var(--tui-bg-deep));
+    box-shadow: 0 0 0 1px var(--tui-border), 0 24px 64px rgba(0, 0, 0, 0.52);
 }
 
 .tui-modal-body {
     min-height: 0;
     overflow: auto;
     scrollbar-gutter: stable;
-    padding: 8px;
+    padding: 12px;
+}
+
+.tui-modal.is-image-preview .tui-modal-body {
+    padding: clamp(10px, 2vw, 18px);
+}
+
+.tui-image-lightbox {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    min-width: 0;
+}
+
+.tui-image-lightbox-frame {
+    display: grid;
+    place-items: center;
+    min-height: min(62vh, 560px);
+    border: 1px solid var(--tui-border-dim);
+    background:
+        radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--tui-panel) 78%, transparent), transparent 62%),
+        var(--tui-bg-deep);
+}
+
+.tui-image-lightbox img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    max-height: min(72vh, 680px);
+    object-fit: contain;
+}
+
+.tui-image-lightbox figcaption {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--tui-muted);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.tui-image-lightbox figcaption span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.tui-image-lightbox figcaption a {
+    flex: 0 0 auto;
+    color: var(--tui-accent);
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.tui-image-lightbox figcaption a:hover,
+.tui-image-lightbox figcaption a:focus {
+    color: var(--tui-text);
+    outline: 0;
 }
 
 .tui-confirmation {
+    display: grid;
+    gap: 10px;
     color: var(--tui-text);
     font-family: var(--tui-mono);
 }
 
 .tui-confirmation p {
-    margin: 0 0 12px;
-    padding: 8px;
-    border: 1px solid var(--tui-border);
+    margin: 0;
+    padding: 7px 9px;
+    border: 1px solid var(--tui-border-dim);
+    border-left: 3px solid var(--tui-accent);
     color: var(--tui-accent);
     background: var(--tui-bg-deep);
+}
+
+.tui-confirmation .tui-field {
+    margin: 0;
+}
+
+.tui-missing-fields-list {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.tui-missing-fields .tui-field {
+    grid-template-columns: minmax(128px, 0.34fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--tui-border-dim);
+    background: var(--tui-bg-deep);
+}
+
+.tui-missing-fields .tui-field span {
+    min-width: 0;
+    color: var(--tui-muted);
+    overflow-wrap: anywhere;
+}
+
+.tui-missing-fields .tui-field input {
+    background: var(--tui-command);
 }
 
 .tui-confirmation-actions {
     display: flex;
     gap: 8px;
+    justify-content: flex-end;
+    min-width: 0;
 }
 
 .tui-confirm-button {
@@ -2151,6 +2310,26 @@ a {
 .tui-confirm-button:hover {
     background: var(--tui-accent);
     color: var(--tui-inverse);
+}
+
+@media (max-width: 640px) {
+    .tui-modal-body {
+        padding: 10px;
+    }
+
+    .tui-missing-fields .tui-field {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 5px;
+    }
+
+    .tui-confirmation-actions {
+        justify-content: stretch;
+    }
+
+    .tui-confirm-button {
+        flex: 1 1 0;
+        min-width: 0;
+    }
 }
 
 .tui-help-grid {

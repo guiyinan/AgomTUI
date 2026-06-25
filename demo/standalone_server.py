@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import html
 import json
+import os
 import re
 import sys
 from datetime import UTC, datetime
@@ -10,7 +11,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +19,7 @@ CORE_SRC = ROOT / "packages" / "agomtui-core" / "src"
 COMPILER_SRC = ROOT / "packages" / "agomtui-compiler" / "src"
 RUNTIME_SRC = ROOT / "packages" / "agomtui-runtime" / "src"
 FIXTURES = ROOT / "demo" / "fixtures"
+DOCS_ASSETS = ROOT / "docs" / "assets"
 HOST = "127.0.0.1"
 PORT = 8020
 DJANGO_HOST = "127.0.0.1"
@@ -334,6 +336,12 @@ RICH_ALLOCATION_ROWS = [
     {"asset": "Credit", "weight": 24, "target": 25, "status": "aligned"},
     {"asset": "Cash", "weight": 16, "target": 15, "status": "buffer"},
 ]
+
+RICH_IMAGE_PREVIEW = {
+    "image_url": "/demo-assets/demo-overview.png",
+    "alt": "AgomTUI overview workspace screenshot",
+    "caption": "A repository-local screenshot rendered through the built-in image view.",
+}
 
 
 def action_index() -> dict[str, dict[str, Any]]:
@@ -707,6 +715,20 @@ def execute_action_logic(action_key: str, params: dict[str, Any], confirmed: boo
                 "fallback_message": "Host partial rendering is disabled until the host enables HTML slots.",
             },
             raw={"source": "/api/demo/rich/host-partial/", "data": {"partial_html": partial_html}, "generated_at": utc_now()},
+        )
+    if action_key == "command-center.image-preview":
+        return response(
+            action_key,
+            {
+                "kind": "image",
+                "title": "Image URL Preview",
+                "status": "正常 / Metadata Renderer",
+                "url": RICH_IMAGE_PREVIEW["image_url"],
+                "alt": RICH_IMAGE_PREVIEW["alt"],
+                "caption": RICH_IMAGE_PREVIEW["caption"],
+                "empty_message": "No image URL available.",
+            },
+            raw={"source": "/api/demo/rich/image-preview/", "data": copy.deepcopy(RICH_IMAGE_PREVIEW), "generated_at": utc_now()},
         )
     if action_key in {"execution.accounts.list", "param.execution.accounts.filter-risk"}:
         risk_level = str(params.get("risk_level") or ("high" if action_key.startswith("param.") else "all"))
@@ -1227,19 +1249,30 @@ def render_runtime_html(
     brand_label: str,
     api_base: str,
     asset_base: str = "/standalone/static",
+    allow_svg_data_images: bool | None = None,
 ) -> bytes:
+    if allow_svg_data_images is None:
+        allow_svg_data_images = env_allows_svg_data_images()
     return render_embeddable_runtime_html(
         title=title,
         home_href=home_href,
         brand_label=brand_label,
         api_base=api_base,
         asset_base=asset_base,
+        allow_svg_data_images=allow_svg_data_images,
     )
 
 
 def runtime_asset_payload(relative: str) -> tuple[bytes, str]:
     asset = runtime_asset(relative)
     return asset.body, asset.content_type
+
+
+def env_allows_svg_data_images() -> bool:
+    value = os.environ.get("AGOMTUI_ALLOW_SVG_DATA_IMAGES", "").strip().lower()
+    if not value:
+        return True
+    return value not in {"0", "false", "n", "no", "off", "disabled"}
 
 
 def local_url(port: int, path: str = "/") -> str:
@@ -1609,6 +1642,9 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
         if path.startswith("/standalone/static/"):
             self.respond_runtime_asset(path)
             return
+        if path.startswith("/demo-assets/"):
+            self.respond_demo_asset(path)
+            return
         self.respond_error_json(HTTPStatus.NOT_FOUND, f"Unknown route: {path}")
 
     def do_POST(self) -> None:
@@ -1662,6 +1698,33 @@ class DemoRequestHandler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self.respond_error_json(HTTPStatus.NOT_FOUND, f"Unknown asset: {path}")
             return
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", mime)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def respond_demo_asset(self, path: str) -> None:
+        relative = unquote(path.removeprefix("/demo-assets/"))
+        target = (DOCS_ASSETS / relative).resolve()
+        asset_root = DOCS_ASSETS.resolve()
+        try:
+            target.relative_to(asset_root)
+        except ValueError:
+            self.respond_error_json(HTTPStatus.NOT_FOUND, f"Unknown asset: {path}")
+            return
+        if not target.is_file():
+            self.respond_error_json(HTTPStatus.NOT_FOUND, f"Unknown asset: {path}")
+            return
+        body = target.read_bytes()
+        mime = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".gif": "image/gif",
+        }.get(target.suffix.lower(), "application/octet-stream")
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", mime)
         self.send_header("Cache-Control", "no-store")

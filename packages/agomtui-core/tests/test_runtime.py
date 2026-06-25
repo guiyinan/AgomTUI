@@ -317,6 +317,35 @@ class RuntimeHelpersTests(unittest.TestCase):
         self.assertEqual(validated["actions"][0]["view_model"]["renderer"], "echarts")
         self.assertEqual(compacted["actions"][0]["view_model"]["kind"], "table_chart")
 
+    def test_metadata_accepts_image_view_models(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
+        )
+        payload["screens"][0]["dashboard_panels"] = [
+            {
+                "key": "preview",
+                "title": "Preview",
+                "kind": "image",
+                "action_key": "overview.status",
+            }
+        ]
+        payload["actions"][0].update(
+            {
+                "view_type": "image",
+                "view_model": {
+                    "kind": "image",
+                    "url_path": "data.image_url",
+                    "alt_path": "data.alt",
+                    "caption_path": "data.caption",
+                },
+            }
+        )
+
+        validated = validate_tui_metadata(payload)
+
+        self.assertEqual(validated["actions"][0]["view_model"]["kind"], "image")
+        self.assertEqual(validated["screens"][0]["dashboard_panels"][0]["kind"], "image")
+
     def test_metadata_rejects_unsafe_renderer_name(self) -> None:
         payload = json.loads(
             (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
@@ -398,6 +427,62 @@ class RuntimeHelpersTests(unittest.TestCase):
         self.assertEqual(slot_model["kind"], "host_slot")
         self.assertIn("hx-get", slot_model["partial_html"])
 
+    def test_generic_view_model_builder_builds_image_from_url_paths(self) -> None:
+        builder = GenericRuntimeViewModelBuilder()
+        action = {
+            "key": "overview.preview",
+            "label": "Preview Image",
+            "view_type": "image",
+            "view_model": {
+                "kind": "image",
+                "url_path": "data.image_url",
+                "alt_path": "data.alt",
+                "caption_path": "data.caption",
+            },
+        }
+
+        view_model = builder.infer(
+            action=action,
+            payload={
+                "data": {
+                    "image_url": "https://example.test/chart.png",
+                    "alt": "Rendered chart",
+                    "caption": "Latest generated chart.",
+                }
+            },
+            status_code=200,
+        )
+        inferred_from_string = builder.infer(
+            action={"key": "overview.raw_image", "label": "Raw Image", "view_type": "auto"},
+            payload="https://example.test/photo.webp",
+            status_code=200,
+        )
+
+        self.assertEqual(view_model["kind"], "image")
+        self.assertEqual(view_model["url"], "https://example.test/chart.png")
+        self.assertEqual(view_model["alt"], "Rendered chart")
+        self.assertEqual(view_model["caption"], "Latest generated chart.")
+        self.assertEqual(inferred_from_string["kind"], "image")
+        self.assertEqual(inferred_from_string["url"], "https://example.test/photo.webp")
+
+    def test_generic_view_model_builder_allows_svg_data_images_by_default(self) -> None:
+        svg_data_url = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E"
+
+        view_model = GenericRuntimeViewModelBuilder().infer(
+            action={"key": "overview.svg", "label": "SVG Preview", "view_type": "auto"},
+            payload=svg_data_url,
+            status_code=200,
+        )
+        disabled_model = GenericRuntimeViewModelBuilder(allow_svg_data_images=False).infer(
+            action={"key": "overview.svg", "label": "SVG Preview", "view_type": "auto"},
+            payload=svg_data_url,
+            status_code=200,
+        )
+
+        self.assertEqual(view_model["kind"], "image")
+        self.assertEqual(view_model["url"], svg_data_url)
+        self.assertEqual(disabled_model["kind"], "message")
+
     def test_reference_runtime_exposes_rich_renderer_contract(self) -> None:
         runtime_js = (
             REPO_ROOT
@@ -411,6 +496,10 @@ class RuntimeHelpersTests(unittest.TestCase):
 
         self.assertIn("window.AgomTUIRenderers", runtime_js)
         self.assertIn("registerRenderer", runtime_js)
+        self.assertIn("renderImageMarkup", runtime_js)
+        self.assertIn("showImagePreview", runtime_js)
+        self.assertIn("data-image-preview", runtime_js)
+        self.assertIn("allowSvgDataImages", runtime_js)
         self.assertIn("allowHostHtmlSlots", runtime_js)
         self.assertIn("window.htmx.process", runtime_js)
 

@@ -192,7 +192,7 @@ class CollectorTests(unittest.TestCase):
         )
 
         kinds = {action["view_model"]["kind"] for action in result.validated_payload["actions"]}
-        self.assertEqual({"chart", "table_chart", "host_slot"}, kinds)
+        self.assertEqual({"chart", "image", "table_chart", "host_slot"}, kinds)
         self.assertEqual(result.validated_payload["screens"][0]["dashboard_panels"][2]["kind"], "host_slot")
 
 

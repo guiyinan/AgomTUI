@@ -183,7 +183,7 @@ Rules:
 - `candidate_payload` must be one JSON object
 - the object must already match the AgomTUI schema contract
 - prefer host-agnostic runtime structure over product-specific page choreography
-- prefer `chart`, `kpi_trend`, or `table_chart` view models when evidence clearly describes trends, proportions, KPIs, or table-plus-chart analysis
+- prefer `chart`, `image`, `kpi_trend`, or `table_chart` view models when evidence clearly describes trends, screenshots/previews, proportions, KPIs, or table-plus-chart analysis
 - represent ECharts, CodeMirror, Mermaid, HTMX, or similar rich UI through `view_model.renderer` or `host_slot`; do not make those libraries mandatory runtime dependencies
 - use `host_slot` only for controlled host-rendered fragments that the host adapter explicitly supports
 - do not emit arbitrary HTML as metadata

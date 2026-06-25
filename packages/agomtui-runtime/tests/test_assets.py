@@ -19,8 +19,21 @@ class RuntimeAssetHelperTests(unittest.TestCase):
         self.assertIn('href="/host/"', body)
         self.assertIn(">Host TUI<", body)
         self.assertIn('"apiBase": "/host-api/tui"', body)
+        self.assertIn('"allowSvgDataImages": true', body)
         self.assertIn("/host/static/css/tui-workbench.css?v=", body)
         self.assertIn("/host/static/js/tui-workbench.js?v=", body)
+
+    def test_render_runtime_html_can_disable_svg_data_images(self) -> None:
+        body = render_runtime_html(
+            title="Host Runtime",
+            home_href="/host/",
+            brand_label="Host TUI",
+            api_base="/host-api/tui",
+            asset_base="/host/static",
+            allow_svg_data_images=False,
+        ).decode("utf-8")
+
+        self.assertIn('"allowSvgDataImages": false', body)
 
     def test_runtime_asset_serves_css_with_content_type(self) -> None:
         asset = runtime_asset("css/tui-workbench.css")

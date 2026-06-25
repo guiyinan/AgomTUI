@@ -34,6 +34,7 @@ def render_runtime_html(
     brand_label: str,
     api_base: str,
     asset_base: str,
+    allow_svg_data_images: bool = True,
     runtime_config: dict[str, Any] | None = None,
     reference_dir: Path | None = None,
 ) -> bytes:
@@ -46,7 +47,7 @@ def render_runtime_html(
     root = reference_dir or runtime_reference_dir()
     source = (root / "tui_workbench.reference.html").read_text(encoding="utf-8")
     normalized_asset_base = asset_base.rstrip("/")
-    config = {"apiBase": api_base}
+    config = {"apiBase": api_base, "allowSvgDataImages": bool(allow_svg_data_images)}
     if runtime_config:
         config.update(runtime_config)
     runtime_config_tag = (

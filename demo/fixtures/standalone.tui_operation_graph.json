@@ -122,6 +122,13 @@
           "kind": "host_slot",
           "action_key": "command-center.host-partial",
           "layout_area": "tasks"
+        },
+        {
+          "key": "image-preview",
+          "title": "Image URL Preview",
+          "kind": "image",
+          "action_key": "command-center.image-preview",
+          "layout_area": "tasks"
         }
       ]
     },
@@ -332,6 +339,28 @@
         "slot_key": "rich-components-demo",
         "partial_path": "data.partial_html",
         "fallback_message": "Host partial rendering is disabled until the host enables HTML slots."
+      }
+    },
+    {
+      "key": "command-center.image-preview",
+      "label": "Image URL Preview",
+      "method": "GET",
+      "endpoint": "/api/demo/rich/image-preview/",
+      "intent": "read_image_preview",
+      "screen_key": "command-center.rich-components",
+      "module_key": "command-center",
+      "view_type": "image",
+      "risk": "read",
+      "task_tier": "support",
+      "task_group": "00 Dashboard",
+      "sequence": 7,
+      "description": "Render a safe image URL with optional alt text and caption.",
+      "source": "approved:demo",
+      "view_model": {
+        "kind": "image",
+        "url_path": "data.image_url",
+        "alt_path": "data.alt",
+        "caption_path": "data.caption"
       }
     },
     {

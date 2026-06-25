@@ -216,6 +216,7 @@ def _check_action_view_model(
 ) -> None:
     required_by_kind = {
         "chart": ("data_path", "x_path", "y_path"),
+        "image": ("url_path",),
         "kpi_trend": ("data_path", "label_path", "value_path"),
         "table_chart": ("table_rows_path",),
         "host_slot": ("slot_key", "partial_path", "fallback_message"),

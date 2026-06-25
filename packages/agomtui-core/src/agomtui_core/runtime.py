@@ -30,6 +30,27 @@ _IDENTIFIER_FIELDS = {
     "snapshot_id",
     "run_id",
 }
+_IMAGE_URL_KEYS = (
+    "image_url",
+    "imageUrl",
+    "img_url",
+    "imgUrl",
+    "thumbnail_url",
+    "thumbnailUrl",
+    "preview_url",
+    "previewUrl",
+    "cover_url",
+    "coverUrl",
+    "avatar_url",
+    "avatarUrl",
+    "src",
+    "url",
+    "href",
+    "image",
+)
+_IMAGE_URL_EXTENSIONS = (".apng", ".avif", ".gif", ".jpeg", ".jpg", ".png", ".webp")
+_SAFE_IMAGE_DATA_PATTERN = re.compile(r"^data:image/(?:apng|avif|gif|jpe?g|png|webp);", re.IGNORECASE)
+_SVG_IMAGE_DATA_PATTERN = re.compile(r"^data:image/svg\+xml(?:[;,]|$)", re.IGNORECASE)
 _HTML_TAG_PATTERN = re.compile(r"</?\s*[a-zA-Z][a-zA-Z0-9:-]*(?:\s+[^<>]*)?>")
 _ESCAPED_HTML_TAG_PATTERN = re.compile(r"&lt;/?\s*[a-zA-Z][a-zA-Z0-9:-]*")
 _SENSITIVE_PARAM_TOKENS = (
@@ -614,10 +635,12 @@ class GenericRuntimeViewModelBuilder:
         field_labeler: Callable[[str], str] | None = None,
         password_challenge_hint: str = "Provide the required password and retry the action.",
         default_page_size: int = 20,
+        allow_svg_data_images: bool = True,
     ) -> None:
         self.field_labeler = field_labeler or humanize_runtime_key
         self.password_challenge_hint = password_challenge_hint
         self.default_page_size = default_page_size
+        self.allow_svg_data_images = allow_svg_data_images
 
     def infer(
         self,
@@ -630,10 +653,13 @@ class GenericRuntimeViewModelBuilder:
 
         data = self._unwrap_payload(payload)
         forced_kind = self._view_model_path(action, "kind")
+        view_type = str(action.get("view_type") or "").strip()
         if isinstance(data, dict) and self._is_endpoint_directory(data):
             return self._endpoint_directory_model(action, data, status_code)
         if forced_kind == "chart":
             return self._chart_model(action, data, status_code)
+        if forced_kind == "image" or view_type == "image":
+            return self._image_model(action, data, status_code)
         if forced_kind == "kpi_trend":
             return self._kpi_trend_model(action, data, status_code)
         if forced_kind == "table_chart":
@@ -673,6 +699,8 @@ class GenericRuntimeViewModelBuilder:
             if list_value is not None:
                 return self._datagrid_model(action, list_value, status_code, envelope=data)
             return self._detail_model(action, data, status_code)
+        if isinstance(data, str) and self._looks_like_image_url(data, require_image_hint=True):
+            return self._image_model(action, data, status_code)
         if self._looks_like_html(data):
             return self._message_model(action, self._html_to_text(str(data)), status_code)
         return self._message_model(action, self._display_value(data), status_code)
@@ -848,6 +876,56 @@ class GenericRuntimeViewModelBuilder:
             "empty_message": "No KPI data available.",
         }
 
+    def _image_model(
+        self,
+        action: Mapping[str, Any],
+        payload: Any,
+        status_code: int,
+    ) -> dict[str, Any]:
+        config = action.get("view_model") if isinstance(action.get("view_model"), Mapping) else {}
+        data = payload if isinstance(payload, Mapping) else None
+        url = ""
+        alt = ""
+        caption = ""
+        if isinstance(data, Mapping):
+            url_path = str(config.get("url_path") or "").strip()
+            alt_path = str(config.get("alt_path") or "").strip()
+            caption_path = str(config.get("caption_path") or "").strip()
+            if url_path:
+                url = self._string_at_path(data, url_path)
+            if alt_path:
+                alt = self._string_at_path(data, alt_path)
+            if caption_path:
+                caption = self._string_at_path(data, caption_path)
+            if not url:
+                url = self._first_mapping_string(data, _IMAGE_URL_KEYS)
+            if not alt:
+                alt = self._first_mapping_string(data, ("alt", "alt_text", "altText", "title", "name", "label"))
+            if not caption:
+                caption = self._first_mapping_string(data, ("caption", "description", "summary", "title", "name", "label"))
+        elif isinstance(payload, str):
+            url = payload.strip()
+        elif isinstance(payload, Sequence) and not isinstance(payload, (str, bytes, bytearray)):
+            for item in payload:
+                if isinstance(item, str) and self._looks_like_image_url(item, require_image_hint=True):
+                    url = item.strip()
+                    break
+                if isinstance(item, Mapping):
+                    url = self._first_mapping_string(item, _IMAGE_URL_KEYS)
+                    if url:
+                        alt = self._first_mapping_string(item, ("alt", "alt_text", "altText", "title", "name", "label"))
+                        caption = self._first_mapping_string(item, ("caption", "description", "summary", "title", "name", "label"))
+                        break
+        return {
+            "kind": "image",
+            "title": self._action_title(action),
+            "status": self._status_label(status_code, payload),
+            "url": url,
+            "alt": alt or self._action_title(action),
+            "caption": caption,
+            "empty_message": "No image URL available.",
+        }
+
     def _table_chart_model(
         self,
         action: Mapping[str, Any],
@@ -937,6 +1015,22 @@ class GenericRuntimeViewModelBuilder:
             return None
         value = self._value_at_path(payload, path)
         return value if isinstance(value, list) else None
+
+    def _string_at_path(self, payload: Mapping[str, Any], path: str) -> str:
+        value = self._value_at_path(payload, path)
+        if value is None or isinstance(value, (dict, list)):
+            return ""
+        return str(value).strip()
+
+    def _first_mapping_string(self, payload: Mapping[str, Any], keys: Sequence[str]) -> str:
+        for key in keys:
+            value = payload.get(key)
+            if value is None or isinstance(value, (dict, list)):
+                continue
+            text = str(value).strip()
+            if text:
+                return text
+        return ""
 
     def _chart_points(self, action: Mapping[str, Any], rows: Sequence[Any]) -> list[dict[str, Any]]:
         x_path = self._view_model_path(action, "x_path")
@@ -1219,6 +1313,22 @@ class GenericRuntimeViewModelBuilder:
             return True
         parsed = urlparse(text)
         return parsed.path.startswith("/api/")
+
+    def _looks_like_image_url(self, value: str, *, require_image_hint: bool = False) -> bool:
+        text = str(value or "").strip()
+        if not text:
+            return False
+        if _SAFE_IMAGE_DATA_PATTERN.match(text):
+            return True
+        if self.allow_svg_data_images and _SVG_IMAGE_DATA_PATTERN.match(text):
+            return True
+        parsed = urlparse(text)
+        if parsed.scheme and parsed.scheme not in {"http", "https"}:
+            return False
+        if require_image_hint:
+            path = parsed.path or text.split("?", 1)[0].split("#", 1)[0]
+            return path.lower().endswith(_IMAGE_URL_EXTENSIONS)
+        return bool(parsed.scheme in {"http", "https"} or text.startswith(("/", "./", "../")))
 
     def _is_endpoint_directory(self, payload: Mapping[str, Any]) -> bool:
         endpoints = payload.get("endpoints")

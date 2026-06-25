@@ -41,6 +41,12 @@
           "title": "Host Partial",
           "kind": "host_slot",
           "action_key": "overview.host_partial"
+        },
+        {
+          "key": "image-preview",
+          "title": "Image Preview",
+          "kind": "image",
+          "action_key": "overview.image_preview"
         }
       ]
     }
@@ -98,6 +104,22 @@
         "slot_key": "overview-host-partial",
         "partial_path": "data.partial_html",
         "fallback_message": "Host partial rendering is disabled until the host enables HTML slots."
+      }
+    },
+    {
+      "key": "overview.image_preview",
+      "label": "Image Preview",
+      "endpoint": "/api/tui-example/image-preview/",
+      "intent": "read_image_preview",
+      "screen_key": "overview.rich",
+      "view_type": "image",
+      "risk": "read",
+      "source": "openapi:example",
+      "view_model": {
+        "kind": "image",
+        "url_path": "data.image_url",
+        "alt_path": "data.alt",
+        "caption_path": "data.caption"
       }
     }
   ]

@@ -153,12 +153,14 @@
 
     const runtimeConfig = window.__AGOMTUI_RUNTIME__ || {};
     const apiBase = String(runtimeConfig.apiBase || "/api/tui").replace(/\/+$/, "");
+    const allowSvgDataImages = runtimeConfig.allowSvgDataImages !== false;
     const rendererRegistry = new Map();
     const builtInRendererNames = new Set([
         "datagrid",
         "detail",
         "message",
         "chart",
+        "image",
         "line",
         "bar",
         "pie",
@@ -1253,6 +1255,9 @@
         if (viewModel.kind === "chart") {
             return renderChartMarkup(viewModel, { compact: true });
         }
+        if (viewModel.kind === "image") {
+            return renderImageMarkup(viewModel, { compact: true });
+        }
         if (viewModel.kind === "kpi_trend") {
             return renderKpiTrendMarkup(viewModel, { compact: true });
         }
@@ -1978,6 +1983,9 @@
         } else if (viewModel.kind === "chart") {
             resetGridState({ preserveRowContext: true });
             renderChart(viewModel);
+        } else if (viewModel.kind === "image") {
+            resetGridState({ preserveRowContext: true });
+            renderImage(viewModel);
         } else if (viewModel.kind === "kpi_trend") {
             resetGridState({ preserveRowContext: true });
             renderKpiTrend(viewModel);
@@ -2152,6 +2160,14 @@
         `;
     }
 
+    function renderImage(viewModel) {
+        els.main.innerHTML = `
+            <div class="tui-view-status">${escapeHtml(viewModel.status || "正常")} / ${escapeHtml(viewModel.title || "图片")}</div>
+            ${renderDecisionCue(viewModel)}
+            ${renderImageMarkup(viewModel)}
+        `;
+    }
+
     function renderKpiTrend(viewModel) {
         els.main.innerHTML = `
             <div class="tui-view-status">${escapeHtml(viewModel.status || "正常")} / ${escapeHtml(viewModel.title || "指标趋势")}</div>
@@ -2211,6 +2227,72 @@
                 </div>
             </section>
         `;
+    }
+
+    function renderImageMarkup(viewModel, options = {}) {
+        const source = imageSourceFromViewModel(viewModel);
+        if (!source) {
+            return renderEmptyState(viewModel.empty_message || "暂无图片链接。", []);
+        }
+        const alt = String(viewModel.alt || viewModel.caption || viewModel.title || "Image");
+        const caption = String(viewModel.caption || "");
+        const title = String(viewModel.title || "Image");
+        return `
+            <figure class="tui-rich-view tui-image-view ${options.compact ? "is-compact" : ""}">
+                <div class="tui-rich-header">
+                    <strong>${escapeHtml(title)}</strong>
+                    <span>IMAGE</span>
+                </div>
+                <button class="tui-image-frame" type="button"
+                        data-image-preview
+                        data-image-src="${escapeHtml(source)}"
+                        data-image-alt="${escapeHtml(alt)}"
+                        data-image-caption="${escapeHtml(caption)}"
+                        data-image-title="${escapeHtml(title)}">
+                    <img src="${escapeHtml(source)}" alt="${escapeHtml(alt)}" loading="lazy" decoding="async">
+                </button>
+                ${caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : ""}
+            </figure>
+        `;
+    }
+
+    function imageSourceFromViewModel(viewModel) {
+        const candidates = [
+            viewModel.url,
+            viewModel.src,
+            viewModel.image_url,
+            viewModel.imageUrl,
+            viewModel.href,
+        ];
+        for (const candidate of candidates) {
+            const source = normalizeImageSource(candidate);
+            if (source) {
+                return source;
+            }
+        }
+        return "";
+    }
+
+    function normalizeImageSource(value) {
+        const raw = String(value || "").trim();
+        if (!raw) {
+            return "";
+        }
+        try {
+            const url = new URL(raw, window.location.href);
+            if (url.protocol === "http:" || url.protocol === "https:") {
+                return raw;
+            }
+            if (url.protocol === "data:" && /^data:image\/(?:apng|avif|gif|jpe?g|png|webp);/i.test(raw)) {
+                return raw;
+            }
+            if (url.protocol === "data:" && allowSvgDataImages && /^data:image\/svg\+xml(?:[;,]|$)/i.test(raw)) {
+                return raw;
+            }
+        } catch (_error) {
+            return "";
+        }
+        return "";
     }
 
     function renderKpiTrendMarkup(viewModel, options = {}) {
@@ -2928,26 +3010,55 @@
         }, value);
     }
 
-    function showModal(title, bodyHtml) {
+    function showModal(title, bodyHtml, options = {}) {
         els.modalTitle.textContent = title;
         els.modalBody.innerHTML = bodyHtml;
+        els.modal.classList.remove("is-image-preview");
+        if (options.className) {
+            els.modal.classList.add(options.className);
+        }
         els.modal.hidden = false;
         els.modalClose.focus();
+    }
+
+    function showImagePreview(trigger) {
+        const source = normalizeImageSource(trigger.dataset.imageSrc || "");
+        if (!source) {
+            setStatus("图片链接不可用");
+            return;
+        }
+        const title = trigger.dataset.imageTitle || "图片预览";
+        const alt = trigger.dataset.imageAlt || title;
+        const caption = trigger.dataset.imageCaption || "";
+        showModal(title, `
+            <figure class="tui-image-lightbox">
+                <div class="tui-image-lightbox-frame">
+                    <img src="${escapeHtml(source)}" alt="${escapeHtml(alt)}" loading="eager" decoding="async">
+                </div>
+                <figcaption>
+                    ${caption ? `<span>${escapeHtml(caption)}</span>` : ""}
+                    <a href="${escapeHtml(source)}" target="_blank" rel="noopener noreferrer">打开原图</a>
+                </figcaption>
+            </figure>
+        `, { className: "is-image-preview" });
+        setStatus("图片预览");
     }
 
     function showMissingFieldsPrompt(result, actionKey, params, options = {}) {
         const fields = result.missing_fields || [];
         showModal("补填参数", `
-            <form class="tui-confirmation" data-missing-fields-form>
+            <form class="tui-confirmation tui-missing-fields" data-missing-fields-form>
                 <p>${escapeHtml(result.view_model?.message || "补齐参数后继续执行。")}</p>
-                ${fields.map((field) => `
-                    <label class="tui-field">
-                        <span>${escapeHtml(field.label || field.key)}</span>
-                        <input name="${escapeHtml(field.key)}" type="${field.input_type === "number" ? "number" : "text"}"
-                               value="${escapeHtml(params[field.key] || field.default || "")}"
-                               placeholder="${escapeHtml(field.placeholder || "")}" ${field.required ? "required" : ""}>
-                    </label>
-                `).join("")}
+                <div class="tui-missing-fields-list">
+                    ${fields.map((field) => `
+                        <label class="tui-field">
+                            <span>${escapeHtml(field.label || field.key)}</span>
+                            <input name="${escapeHtml(field.key)}" type="${field.input_type === "number" ? "number" : "text"}"
+                                   value="${escapeHtml(params[field.key] || field.default || "")}"
+                                   placeholder="${escapeHtml(field.placeholder || "")}" ${field.required ? "required" : ""}>
+                        </label>
+                    `).join("")}
+                </div>
                 <div class="tui-confirmation-actions">
                     <button class="tui-confirm-button" type="submit">继续</button>
                     <button class="tui-confirm-button" type="button" data-cancel-action>取消</button>
@@ -3049,6 +3160,7 @@
     function closeModal() {
         if (els.modal) {
             els.modal.hidden = true;
+            els.modal.classList.remove("is-image-preview");
         }
     }
 
@@ -3632,6 +3744,14 @@
             }
             event.preventDefault();
             triggerActionForm(form);
+        });
+        els.main?.addEventListener("click", (event) => {
+            const imagePreview = event.target?.closest?.("[data-image-preview]");
+            if (!imagePreview) {
+                return;
+            }
+            event.preventDefault();
+            showImagePreview(imagePreview);
         });
         els.currentLocation?.addEventListener("focus", () => {
             els.currentLocation.select();
