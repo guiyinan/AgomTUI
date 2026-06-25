@@ -809,6 +809,14 @@ a {
     cursor: not-allowed;
 }
 
+.tui-action-submit {
+    display: block;
+    width: calc(100% - 40px);
+    margin: 7px 8px 0 32px;
+    padding: 5px 8px;
+    text-align: center;
+}
+
 .tui-action-group {
     margin: 0 0 10px;
     padding: 0;
@@ -1639,6 +1647,50 @@ a {
     background: var(--tui-accent);
     color: var(--tui-inverse);
     outline: 1px solid var(--tui-text);
+}
+
+.tui-datagrid-pager {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    min-height: 30px;
+    margin-top: 6px;
+    padding: 4px 6px;
+    border: 1px solid var(--tui-border);
+    background: var(--tui-bg-deep);
+    color: var(--tui-muted);
+    font: 700 11px/1.2 var(--tui-mono);
+}
+
+.tui-datagrid-pager button,
+.tui-action-submit {
+    border: 1px solid var(--tui-border);
+    border-radius: 0;
+    background: var(--tui-panel);
+    color: var(--tui-accent);
+    font: 700 11px/1.2 var(--tui-mono);
+}
+
+.tui-datagrid-pager button {
+    min-width: 64px;
+    padding: 3px 8px;
+}
+
+.tui-datagrid-pager button:hover,
+.tui-datagrid-pager button:focus,
+.tui-action-submit:hover,
+.tui-action-submit:focus {
+    background: var(--tui-text);
+    color: var(--tui-inverse);
+    outline: 0;
+}
+
+.tui-datagrid-pager button:disabled {
+    border-color: var(--tui-border-dim);
+    background: var(--tui-panel);
+    color: var(--tui-border-dim);
+    cursor: not-allowed;
 }
 
 .tui-rich-view {

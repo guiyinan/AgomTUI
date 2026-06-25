@@ -212,6 +212,54 @@ class RuntimeHelpersTests(unittest.TestCase):
         self.assertEqual(action["executor"], "sync_latest_quotes")
         self.assertEqual(action["fields"][0]["key"], "symbols")
 
+    def test_metadata_accepts_runtime_pagination_aliases_and_file_input(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
+        )
+        payload["field_aliases"] = {
+            "company.keyword": ["keyword", "name", "companyName", "company_name"],
+            "company.id": ["id", "cid", "companyId", "company_id"],
+        }
+        payload["actions"][0]["fields"] = [
+            {
+                "key": "keyword",
+                "label": "Keyword",
+                "semantic": "company.keyword",
+                "aliases": ["creditCode", "credit_code"],
+            },
+            {
+                "key": "csv_text",
+                "label": "CSV File",
+                "input_type": "file",
+                "accept": ".csv,text/csv",
+            },
+            {
+                "key": "pageNum",
+                "label": "Page",
+                "input_type": "number",
+                "default": 1,
+            },
+            {
+                "key": "pageSize",
+                "label": "Page Size",
+                "input_type": "number",
+                "default": 10,
+            },
+        ]
+        payload["actions"][0]["pagination"] = {
+            "mode": "page",
+            "page_param": "pageNum",
+            "page_size_param": "pageSize",
+        }
+
+        validated = validate_tui_metadata(payload)
+        action = validated["actions"][0]
+
+        self.assertEqual(action["fields"][0]["semantic"], "company.keyword")
+        self.assertEqual(action["fields"][1]["input_type"], "file")
+        self.assertEqual(action["fields"][1]["value_type"], "string")
+        self.assertEqual(action["pagination"]["page_param"], "pageNum")
+
     def test_governed_action_cannot_disable_confirmation_or_audit(self) -> None:
         payload = json.loads(
             (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")

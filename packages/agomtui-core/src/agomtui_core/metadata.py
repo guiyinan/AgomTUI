@@ -48,6 +48,7 @@ ALLOWED_TUI_SENSITIVE_LEVELS = {"none", "low", "medium", "high", "critical"}
 ALLOWED_TUI_FIELD_INPUT_TYPES = {
     "checkbox",
     "date",
+    "file",
     "hidden",
     "number",
     "select",
@@ -77,8 +78,22 @@ ALLOWED_TUI_FIELD_KEYS = {
     "options",
     "placeholder",
     "required",
+    "accept",
+    "aliases",
+    "semantic",
     "unit",
     "value_type",
+}
+ALLOWED_TUI_PAGINATION_MODES = {"page", "offset", "cursor"}
+ALLOWED_TUI_PAGINATION_KEYS = {
+    "mode",
+    "page_param",
+    "page_size_param",
+    "offset_param",
+    "limit_param",
+    "cursor_param",
+    "next_cursor_path",
+    "previous_cursor_path",
 }
 ALLOWED_TUI_VIEW_MODEL_KEYS = {
     "kind",
@@ -269,6 +284,7 @@ def validate_tui_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     default_screen = str(payload["default_screen"])
     if default_screen not in screen_keys:
         raise TuiMetadataValidationError(f"default_screen does not exist: {default_screen}")
+    _validate_field_alias_registry(payload.get("field_aliases"))
 
     for module in modules:
         _require_fields(module, "module", ("key", "label", "group", "summary"))
@@ -357,6 +373,8 @@ def validate_tui_metadata(payload: dict[str, Any]) -> dict[str, Any]:
         action.setdefault("task_group", "")
         action.setdefault("task_tier", "")
         action.setdefault("sequence", 999)
+        if "pagination" in action:
+            _validate_action_pagination(action)
         _validate_governance_contract(action)
         _validate_action_source(action)
         _validate_confirmed_operation_contract(action)
@@ -528,7 +546,7 @@ def _validate_field(action: dict[str, Any], field: dict[str, Any]) -> None:
         field["value_type"] = "integer" if field_key.endswith("_id") or field_key == "pk" else "float"
     if input_type == "checkbox" and not field.get("value_type"):
         field["value_type"] = "boolean"
-    if input_type in {"text", "textarea", "hidden", "select"} and not field.get("value_type"):
+    if input_type in {"text", "textarea", "hidden", "select", "file"} and not field.get("value_type"):
         field["value_type"] = "string"
 
     value_type = field.get("value_type")
@@ -543,6 +561,53 @@ def _validate_field(action: dict[str, Any], field: dict[str, Any]) -> None:
         )
     if input_type == "select" and not isinstance(field.get("options"), list):
         raise TuiMetadataValidationError(f"Select field must define options: {action['key']}.{field_key}")
+    if field.get("aliases") is not None and not _is_string_list(field.get("aliases")):
+        raise TuiMetadataValidationError(f"Action field aliases must be a string list: {action['key']}.{field_key}")
+    if field.get("semantic") is not None and not isinstance(field.get("semantic"), str):
+        raise TuiMetadataValidationError(f"Action field semantic must be a string: {action['key']}.{field_key}")
+    if field.get("accept") is not None and not isinstance(field.get("accept"), str):
+        raise TuiMetadataValidationError(f"Action file field accept must be a string: {action['key']}.{field_key}")
+
+
+def _validate_field_alias_registry(registry: Any) -> None:
+    if registry is None:
+        return
+    if not isinstance(registry, dict):
+        raise TuiMetadataValidationError("field_aliases must be an object")
+    for semantic, aliases in registry.items():
+        if not isinstance(semantic, str) or not semantic.strip():
+            raise TuiMetadataValidationError("field_aliases keys must be non-empty strings")
+        if not _is_string_list(aliases):
+            raise TuiMetadataValidationError(f"field_aliases entry must be a string list: {semantic}")
+
+
+def _validate_action_pagination(action: dict[str, Any]) -> None:
+    pagination = action.get("pagination")
+    if not isinstance(pagination, dict):
+        raise TuiMetadataValidationError(f"Action pagination must be an object: {action['key']}")
+    unknown_keys = set(pagination) - ALLOWED_TUI_PAGINATION_KEYS
+    if unknown_keys:
+        names = ", ".join(sorted(unknown_keys))
+        raise TuiMetadataValidationError(f"Action pagination has unsupported keys: {action['key']}.{names}")
+    mode = str(pagination.get("mode") or "").strip()
+    if mode not in ALLOWED_TUI_PAGINATION_MODES:
+        raise TuiMetadataValidationError(f"Action pagination has unsupported mode: {action['key']}.{mode}")
+    required_by_mode = {
+        "page": ("page_param", "page_size_param"),
+        "offset": ("offset_param", "limit_param"),
+        "cursor": ("cursor_param",),
+    }
+    for key in required_by_mode[mode]:
+        value = pagination.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise TuiMetadataValidationError(f"Action pagination missing {key}: {action['key']}")
+    for key, value in pagination.items():
+        if key != "mode" and value is not None and not isinstance(value, str):
+            raise TuiMetadataValidationError(f"Action pagination value must be a string: {action['key']}.{key}")
+
+
+def _is_string_list(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
 def _validate_action_source(action: dict[str, Any]) -> None:
