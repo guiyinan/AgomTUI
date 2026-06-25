@@ -5,6 +5,12 @@
 Run the local demo server from the repository root:
 
 ```powershell
+.\scripts\start_standalone.ps1
+```
+
+Equivalent raw command:
+
+```powershell
 python demo\standalone_server.py
 ```
 
@@ -24,6 +30,12 @@ The standalone server uses only the Python standard library. It reads the compil
 Start the real host in a second terminal:
 
 ```powershell
+.\scripts\start_django_host.ps1
+```
+
+Equivalent raw command:
+
+```powershell
 python demo\django_host\manage.py runserver 127.0.0.1:8030 --noreload
 ```
 
@@ -40,8 +52,16 @@ Then open:
 If you want one command for both surfaces:
 
 ```powershell
+.\scripts\start_frontend.ps1
+```
+
+Equivalent raw command:
+
+```powershell
 python demo\run_demo_stack.py
 ```
+
+The frontend/runtime surface is currently served by these Python demo servers. There is no npm/Vite dev server in this repository.
 
 ## 4. Verification
 

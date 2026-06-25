@@ -24,6 +24,18 @@ Using my backend repository/API, generate or integrate a working internal operat
 Run the demo stack from the repository root:
 
 ```powershell
+.\scripts\start_frontend.ps1
+```
+
+The current frontend surface is served by Python demo servers, not by an npm/Vite dev server. The combined script starts both local surfaces:
+
+- `http://localhost:8020/` for the standalone product frontend and runtime demo
+- `http://localhost:8030/` for the Django host demo
+- `http://localhost:8030/tui/` for the runtime mounted inside the Django host
+
+Equivalent raw command:
+
+```powershell
 python demo\run_demo_stack.py
 ```
 
@@ -40,7 +52,25 @@ Open:
 Standalone-only demo:
 
 ```powershell
+.\scripts\start_standalone.ps1
+```
+
+Equivalent raw command:
+
+```powershell
 python demo\standalone_server.py
+```
+
+Django-host-only demo:
+
+```powershell
+.\scripts\start_django_host.ps1
+```
+
+Equivalent raw command:
+
+```powershell
+python demo\django_host\manage.py runserver 127.0.0.1:8030 --noreload
 ```
 
 Non-Django host example:
@@ -192,4 +222,3 @@ Action governance fields are schema-validated: `risk`, `confirmation_required`, 
 - [Development standards](docs/development/development-standards.md)
 - [Testing](docs/development/testing.md)
 - [CI guardrails](docs/development/ci-guardrails.md)
-
