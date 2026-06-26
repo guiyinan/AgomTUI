@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "agomtui-demo-django-host"
 DEBUG = True
-ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("AGOMTUI_DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver").split(",")
+    if host.strip()
+]
 ROOT_URLCONF = "django_host.urls"
 MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",

@@ -63,6 +63,12 @@ python demo\run_demo_stack.py
 
 The frontend/runtime surface is currently served by these Python demo servers. There is no npm/Vite dev server in this repository.
 
+For a VPS or other remote host, keep the local defaults unchanged and override bind addresses explicitly:
+
+```bash
+AGOMTUI_HOST=0.0.0.0 AGOMTUI_DJANGO_HOST=0.0.0.0 AGOMTUI_DJANGO_ALLOWED_HOSTS='*' python demo/run_demo_stack.py
+```
+
 ## 4. Verification
 
 Compiler tests:

@@ -20,10 +20,10 @@ COMPILER_SRC = ROOT / "packages" / "agomtui-compiler" / "src"
 RUNTIME_SRC = ROOT / "packages" / "agomtui-runtime" / "src"
 FIXTURES = ROOT / "demo" / "fixtures"
 DOCS_ASSETS = ROOT / "docs" / "assets"
-HOST = "127.0.0.1"
-PORT = 8020
-DJANGO_HOST = "127.0.0.1"
-DJANGO_PORT = 8030
+HOST = os.environ.get("AGOMTUI_HOST", "127.0.0.1")
+PORT = int(os.environ.get("AGOMTUI_PORT", "8020"))
+DJANGO_HOST = os.environ.get("AGOMTUI_DJANGO_HOST", "127.0.0.1")
+DJANGO_PORT = int(os.environ.get("AGOMTUI_DJANGO_PORT", "8030"))
 
 for package_src in (CORE_SRC, COMPILER_SRC, RUNTIME_SRC):
     package_path = str(package_src)
