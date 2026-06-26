@@ -283,6 +283,12 @@ def _extract_schema_fields(schema: dict[str, Any]) -> list[dict[str, Any]]:
                 "options": [option for option in field_schema.get("enum", [])],
             }
         )
+        items_schema = field_schema.get("items") or {}
+        if isinstance(items_schema, dict):
+            normalized[-1]["item_type"] = _map_openapi_schema_value_type(items_schema)
+            item_fields = _extract_schema_fields(items_schema)
+            if item_fields:
+                normalized[-1]["item_fields"] = item_fields
     return normalized
 
 
@@ -322,6 +328,8 @@ def _extract_response_contract(responses: dict[str, Any]) -> dict[str, Any]:
         "media_types": media_types,
         "schema_type": str(schema.get("type") or ""),
         "schema_format": str(schema.get("format") or ""),
+        "fields": _extract_schema_fields(schema),
+        "item_fields": _extract_schema_fields(schema.get("items") or {}) if isinstance(schema.get("items"), dict) else [],
     }
 
 

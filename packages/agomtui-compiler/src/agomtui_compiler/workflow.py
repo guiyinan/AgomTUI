@@ -8,6 +8,7 @@ from typing import Any
 from agomtui_core import apply_tui_metadata_overrides, compact_tui_metadata_payload, validate_tui_metadata
 
 from .collector import BaseCollector, CollectionContext, EvidenceBundle
+from .enrichment import enrich_metadata_from_evidence
 from .publisher import FileArtifactPublisher, PublishResult
 from .synthesizer import LlmMetadataSynthesizer, MetadataSynthesisRequest
 
@@ -66,6 +67,7 @@ class CompilerWorkflow:
         candidate_payload = dict(synthesis.candidate_payload)
         for overrides in metadata_overrides or []:
             candidate_payload = apply_tui_metadata_overrides(candidate_payload, overrides)
+        candidate_payload = enrich_metadata_from_evidence(candidate_payload, evidence_bundle)
         validated = validate_tui_metadata(candidate_payload)
         compacted = compact_tui_metadata_payload(validated)
         evidence_payload = {

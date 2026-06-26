@@ -116,6 +116,41 @@ class RuntimeHelpersTests(unittest.TestCase):
         self.assertEqual(view_model["rows"][0]["account_id"], "ACC-1")
         self.assertEqual(view_model["columns"][0]["label"], "Account ID")
 
+    def test_generic_view_model_builder_uses_offset_pagination_contract(self) -> None:
+        builder = GenericRuntimeViewModelBuilder()
+        action = {
+            "key": "execution.events.list",
+            "label": "Events",
+            "view_type": "datagrid",
+            "pagination": {
+                "mode": "offset",
+                "offset_param": "offset",
+                "limit_param": "limit",
+            },
+            "view_model": {
+                "rows_path": "results",
+                "total_path": "total",
+            },
+        }
+        payload = {
+            "results": [{"id": index, "title": f"Event {index}"} for index in range(20, 40)],
+            "total": 45,
+        }
+
+        view_model = builder.infer(
+            action=action,
+            payload=payload,
+            status_code=200,
+            request_params={"offset": 20, "limit": 20},
+        )
+
+        self.assertEqual(view_model["pager"]["mode"], "offset")
+        self.assertEqual(view_model["pager"]["offset"], 20)
+        self.assertEqual(view_model["pager"]["page"], 2)
+        self.assertEqual(view_model["pager"]["page_size"], 20)
+        self.assertTrue(view_model["pager"]["has_previous"])
+        self.assertTrue(view_model["pager"]["has_next"])
+
     def test_generic_view_model_builder_detects_password_challenge(self) -> None:
         builder = GenericRuntimeViewModelBuilder()
         action = {

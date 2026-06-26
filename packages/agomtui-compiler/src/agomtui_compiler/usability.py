@@ -186,6 +186,15 @@ def _check_action(*, action: dict[str, Any], action_index: int, issues: list[Usa
         issues=issues,
     )
     _check_action_fields(action_key=action_key, path=f"{path}.fields", fields=fields, issues=issues)
+    _check_action_pagination(
+        action_key=action_key,
+        path=f"{path}.pagination",
+        view_kind=view_kind,
+        view_model=view_model,
+        fields=fields,
+        pagination=action.get("pagination"),
+        issues=issues,
+    )
 
     if risk in {"write", "admin"} and method != "GET" and not str(action.get("executor") or "").strip():
         _add_issue(
@@ -293,6 +302,39 @@ def _check_action_fields(
                 f"Required field has no default or placeholder hint: {action_key}.{field_key}",
                 field_path,
             )
+
+
+def _check_action_pagination(
+    *,
+    action_key: str,
+    path: str,
+    view_kind: str,
+    view_model: dict[str, Any],
+    fields: list[dict[str, Any]],
+    pagination: Any,
+    issues: list[UsabilityIssue],
+) -> None:
+    if pagination:
+        return
+    if view_kind != "datagrid":
+        return
+    field_keys = {_normalize_field_key(str(field.get("key") or "")) for field in fields}
+    has_offset_pair = {"offset", "limit"}.issubset(field_keys) or {"start", "limit"}.issubset(field_keys)
+    has_page_pair = bool(field_keys & {"page", "pagenum", "pageno"}) and bool(
+        field_keys & {"pagesize", "limit", "size"}
+    )
+    if str(view_model.get("total_path") or "").strip() or has_offset_pair or has_page_pair:
+        _add_issue(
+            issues,
+            "warning",
+            "pagination.missing_contract",
+            f"Datagrid action appears paginated but has no action.pagination contract: {action_key}",
+            path,
+        )
+
+
+def _normalize_field_key(value: str) -> str:
+    return "".join(ch for ch in value.lower() if ch.isalnum())
 
 
 def _group_actions_by_screen(actions: Iterable[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:

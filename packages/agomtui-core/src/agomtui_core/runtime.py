@@ -648,6 +648,7 @@ class GenericRuntimeViewModelBuilder:
         action: Mapping[str, Any],
         payload: Any,
         status_code: int,
+        request_params: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Infer one renderable view model from a host payload."""
 
@@ -674,7 +675,7 @@ class GenericRuntimeViewModelBuilder:
             return self._message_model(action, self._display_value(data), status_code)
         if forced_kind == "datagrid":
             if isinstance(data, list):
-                return self._datagrid_model(action, data, status_code)
+                return self._datagrid_model(action, data, status_code, request_params=request_params)
             if isinstance(data, dict):
                 rows_path = self._view_model_path(action, "rows_path")
                 if not rows_path and self._looks_like_detail_payload(data):
@@ -682,9 +683,15 @@ class GenericRuntimeViewModelBuilder:
                 explicit = self._value_at_path(data, rows_path) if rows_path else None
                 list_value = explicit if isinstance(explicit, list) else self._find_list_value(data)
                 if list_value is not None:
-                    return self._datagrid_model(action, list_value, status_code, envelope=data)
+                    return self._datagrid_model(
+                        action,
+                        list_value,
+                        status_code,
+                        envelope=data,
+                        request_params=request_params,
+                    )
         if isinstance(data, list):
-            return self._datagrid_model(action, data, status_code)
+            return self._datagrid_model(action, data, status_code, request_params=request_params)
         if isinstance(data, dict):
             html_text = self._dominant_html_text(data)
             if html_text:
@@ -697,7 +704,13 @@ class GenericRuntimeViewModelBuilder:
             explicit = self._value_at_path(data, rows_path) if rows_path else None
             list_value = explicit if isinstance(explicit, list) else self._find_list_value(data)
             if list_value is not None:
-                return self._datagrid_model(action, list_value, status_code, envelope=data)
+                return self._datagrid_model(
+                    action,
+                    list_value,
+                    status_code,
+                    envelope=data,
+                    request_params=request_params,
+                )
             return self._detail_model(action, data, status_code)
         if isinstance(data, str) and self._looks_like_image_url(data, require_image_hint=True):
             return self._image_model(action, data, status_code)
@@ -770,15 +783,54 @@ class GenericRuntimeViewModelBuilder:
         rows: list[Any],
         status_code: int,
         envelope: Mapping[str, Any] | None = None,
+        request_params: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         message_list = self._message_list_text(rows)
         if message_list:
             return self._message_model(action, message_list, status_code)
         normalized_rows = [row if isinstance(row, dict) else {"value": row} for row in rows]
         columns = self._columns_for_rows(normalized_rows)
-        page_size = self._int_from_path(action, envelope, "page_size_path", default=self.default_page_size)
+        pagination = action.get("pagination") if isinstance(action.get("pagination"), Mapping) else {}
+        pagination_mode = str(pagination.get("mode") or "page")
+        page_size_param = str(
+            (pagination.get("limit_param") if pagination_mode == "offset" else pagination.get("page_size_param")) or ""
+        ).strip()
+        page_size = self._first_positive_int(
+            self._int_from_path(action, envelope, "page_size_path", default=0),
+            self._int_from_mapping_path(envelope, page_size_param),
+            self._int_from_mapping_path(request_params, page_size_param),
+            self.default_page_size,
+        )
         total = int(self._int_from_path(action, envelope, "total_path", default=0) or len(normalized_rows))
-        page = self._int_from_path(action, envelope, "page_path", default=1)
+        page = self._first_positive_int(
+            self._int_from_path(action, envelope, "page_path", default=0),
+            self._int_from_mapping_path(
+                envelope,
+                str(pagination.get("page_param") or "").strip() if pagination_mode == "page" else "",
+            ),
+            self._int_from_mapping_path(
+                request_params,
+                str(pagination.get("page_param") or "").strip() if pagination_mode == "page" else "",
+            ),
+            1,
+        )
+        offset = 0
+        if pagination_mode == "offset":
+            offset_param = str(pagination.get("offset_param") or "").strip()
+            offset = max(
+                0,
+                self._first_int(
+                    self._int_from_mapping_path(envelope, offset_param),
+                    self._int_from_mapping_path(request_params, offset_param),
+                    0,
+                ),
+            )
+            page = max(1, (offset // page_size) + 1)
+            has_previous = offset > 0
+            has_next = offset + page_size < total
+        else:
+            has_previous = page > 1
+            has_next = page * page_size < total
         return {
             "kind": "datagrid",
             "title": self._action_title(action),
@@ -792,10 +844,12 @@ class GenericRuntimeViewModelBuilder:
             "pager": {
                 "page": page,
                 "page_size": page_size,
+                "offset": offset,
+                "mode": pagination_mode,
                 "total_rows": total,
                 "total_pages": max(1, ceil(total / page_size)),
-                "has_next": page * page_size < total,
-                "has_previous": page > 1,
+                "has_next": has_next,
+                "has_previous": has_previous,
             },
         }
 
@@ -1393,6 +1447,27 @@ class GenericRuntimeViewModelBuilder:
             return int(value) if not _is_blank(value) else default
         except (TypeError, ValueError):
             return default
+
+    def _int_from_mapping_path(self, mapping: Mapping[str, Any] | None, path: str) -> int | None:
+        if not mapping or not path:
+            return None
+        value = self._value_at_path(mapping, path)
+        try:
+            return int(value) if not _is_blank(value) else None
+        except (TypeError, ValueError):
+            return None
+
+    def _first_positive_int(self, *values: int | None) -> int:
+        for value in values:
+            if isinstance(value, int) and value > 0:
+                return value
+        return 1
+
+    def _first_int(self, *values: int | None) -> int:
+        for value in values:
+            if isinstance(value, int):
+                return value
+        return 0
 
 
 class _PlainTextHtmlParser(HTMLParser):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -26,6 +27,22 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(item.payload["endpoint"], "/api/tui-example/status/")
         self.assertEqual(item.payload["method"], "GET")
         self.assertEqual(item.payload["risk"], "read")
+        self.assertEqual(item.payload["response"]["fields"][0]["key"], "component")
+
+    def test_openapi_collector_preserves_list_response_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            spec_path = Path(temp_dir) / "openapi.json"
+            spec_path.write_text(json.dumps(_paginated_openapi_spec()), encoding="utf-8")
+            collector = OpenApiSpecCollector(spec_path)
+
+            items = collector.collect(CollectionContext(project_root=REPO_ROOT, host_kind="django"))
+
+        item = items[0]
+        response_fields = item.payload["response"]["fields"]
+        self.assertEqual([field["key"] for field in item.payload["parameters"]], ["limit", "offset"])
+        self.assertEqual(response_fields[0]["key"], "results")
+        self.assertEqual(response_fields[0]["item_fields"][0]["key"], "id")
+        self.assertEqual(response_fields[1]["key"], "total")
 
     def test_django_contract_collector_reads_model_and_aggregate(self) -> None:
         collector = DjangoContractManifestCollector(EXAMPLES / "minimal.django_contract_manifest.json")
@@ -177,6 +194,39 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(action["fields"][0]["key"], "symbols")
         self.assertEqual(result.evidence_payload["manual_overrides"]["field_patch_count"], 1)
 
+    def test_compile_enriches_offset_pagination_from_openapi(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            spec_path = temp_path / "openapi.json"
+            candidate_path = temp_path / "candidate.json"
+            spec_path.write_text(json.dumps(_paginated_openapi_spec()), encoding="utf-8")
+            candidate_path.write_text(json.dumps(_pagination_candidate_metadata()), encoding="utf-8")
+            workflow = CompilerWorkflow(
+                collectors=[OpenApiSpecCollector(spec_path)],
+                synthesizer=StaticCandidateSynthesizer(candidate_path),
+            )
+
+            result = workflow.compile(
+                context=CollectionContext(project_root=REPO_ROOT, host_kind="django"),
+                schema_path=REPO_ROOT
+                / "packages"
+                / "agomtui-core"
+                / "src"
+                / "agomtui_core"
+                / "schema"
+                / "tui_metadata.schema.v3.json",
+            )
+
+        action = result.validated_payload["actions"][0]
+        self.assertEqual(action["view_type"], "datagrid")
+        self.assertEqual(action["pagination"]["mode"], "offset")
+        self.assertEqual(action["pagination"]["limit_param"], "limit")
+        self.assertEqual(action["pagination"]["offset_param"], "offset")
+        self.assertEqual(action["view_model"]["kind"], "datagrid")
+        self.assertEqual(action["view_model"]["rows_path"], "results")
+        self.assertEqual(action["view_model"]["total_path"], "total")
+        self.assertEqual(action["view_model"]["page_size_path"], "limit")
+
     def test_compile_skill_result_accepts_rich_component_metadata(self) -> None:
         workflow = CompilerWorkflow(
             collectors=[OpenApiSpecCollector(EXAMPLES / "minimal.openapi.json")],
@@ -194,6 +244,91 @@ class CollectorTests(unittest.TestCase):
         kinds = {action["view_model"]["kind"] for action in result.validated_payload["actions"]}
         self.assertEqual({"chart", "image", "table_chart", "host_slot"}, kinds)
         self.assertEqual(result.validated_payload["screens"][0]["dashboard_panels"][2]["kind"], "host_slot")
+
+def _paginated_openapi_spec() -> dict[str, object]:
+    return {
+        "openapi": "3.0.3",
+        "info": {"title": "Pagination API", "version": "1.0.0"},
+        "paths": {
+            "/api/events/pending/": {
+                "get": {
+                    "summary": "List pending events",
+                    "parameters": [
+                        {"name": "limit", "in": "query", "schema": {"type": "integer"}},
+                        {"name": "offset", "in": "query", "schema": {"type": "integer"}},
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Paginated rows",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "results": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "title": {"type": "string"},
+                                                    },
+                                                },
+                                            },
+                                            "total": {"type": "integer"},
+                                            "limit": {"type": "integer"},
+                                            "offset": {"type": "integer"},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            }
+        },
+    }
+
+
+def _pagination_candidate_metadata() -> dict[str, object]:
+    return {
+        "schema_version": "tui-metadata.v3",
+        "version": "agomtui-workbench.v0",
+        "registry_key": "default",
+        "default_screen": "events.pending",
+        "interaction_model": "published-metadata-to-pc-tools",
+        "groups": [{"key": "workbench", "label": "Workbench"}],
+        "modules": [
+            {
+                "key": "events",
+                "label": "Events",
+                "group": "workbench",
+                "summary": "Event review.",
+            }
+        ],
+        "screens": [
+            {
+                "key": "events.pending",
+                "label": "Pending",
+                "module_key": "events",
+                "group": "workbench",
+                "summary": "Review pending events.",
+                "view_type": "status",
+            }
+        ],
+        "actions": [
+            {
+                "key": "events.pending.list",
+                "label": "Pending Events",
+                "endpoint": "/api/events/pending/",
+                "intent": "list_pending_events",
+                "screen_key": "events.pending",
+                "view_type": "detail",
+                "risk": "read",
+                "source": "openapi:test",
+            }
+        ],
+    }
 
 
 if __name__ == "__main__":
