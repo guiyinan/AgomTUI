@@ -2,6 +2,8 @@
 
 Framework-free core for AgomTUI metadata validation, runtime contracts, and host-side execution helpers.
 
+Dashboard panels may declare `target_screen` to describe where a panel click should navigate. The browser runtime reads that metadata directly; hosts should not depend on product-specific panel-key mappings in JavaScript.
+
 ## Included
 
 - `validate_tui_metadata()`

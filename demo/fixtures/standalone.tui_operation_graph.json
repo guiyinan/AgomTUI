@@ -61,6 +61,7 @@
           "title": "Regime Snapshot",
           "kind": "regime_quadrant",
           "action_key": "command-center.regime-status",
+          "target_screen": "macro-regime.overview",
           "layout_area": "regime",
           "note": "Panel fed through the same action-runner contract as the rest of the workbench."
         },
@@ -69,6 +70,7 @@
           "title": "Account Pressure",
           "kind": "datagrid",
           "action_key": "command-center.account-positions",
+          "target_screen": "execution.accounts",
           "layout_area": "account",
           "columns": [
             { "key": "account_name", "label": "Account" },
@@ -81,6 +83,7 @@
           "title": "Task Queue",
           "kind": "datagrid",
           "action_key": "command-center.task-monitor",
+          "target_screen": "execution.tasks",
           "layout_area": "tasks",
           "columns": [
             { "key": "task_id", "label": "Task" },
@@ -107,6 +110,7 @@
           "title": "NAV Trend",
           "kind": "chart",
           "action_key": "command-center.nav-trend",
+          "target_screen": "command-center.rich-components",
           "layout_area": "regime"
         },
         {
@@ -114,6 +118,7 @@
           "title": "Allocation Table + Chart",
           "kind": "table_chart",
           "action_key": "command-center.allocation-table-chart",
+          "target_screen": "command-center.rich-components",
           "layout_area": "account"
         },
         {
@@ -121,6 +126,7 @@
           "title": "Host Partial Slot",
           "kind": "host_slot",
           "action_key": "command-center.host-partial",
+          "target_screen": "command-center.rich-components",
           "layout_area": "tasks"
         },
         {
@@ -128,6 +134,7 @@
           "title": "Image URL Preview",
           "kind": "image",
           "action_key": "command-center.image-preview",
+          "target_screen": "command-center.rich-components",
           "layout_area": "tasks"
         }
       ]

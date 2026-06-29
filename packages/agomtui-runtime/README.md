@@ -10,6 +10,7 @@ This package contains the browser runtime shell plus small host helpers for embe
 - generic action groups, task cards, and confirmation flow
 - governed action protocol handling for missing fields, confirmation, and password challenge responses
 - generic datagrid / detail / message / dashboard renderers
+- dashboard panel navigation via host-authored `dashboard_panels[].target_screen`, so the runtime does not hard-code product screen mappings
 - built-in rich metadata renderers for `chart`, `image`, `kpi_trend`, `table_chart`, and safe `host_slot` views
 - renderer extension registration via `window.AgomTUIRenderers.register(name, rendererFn)` for host-owned renderers such as ECharts, CodeMirror, Mermaid, or Markdown
 - row-fill, inspector, pager, filter, modal, and raw-debug drawer behaviors
@@ -45,6 +46,8 @@ The browser shell treats these response shapes as runtime protocol, not ordinary
 - `password_challenge_required`: renders a re-auth modal and replays with password challenge evidence
 
 The server-side host adapter must still route the replayed request through `GovernedActionRunner`; browser state is convenience, not enforcement.
+
+Missing-field refill uses the same field renderer and value coercion path as ordinary action forms. If the host returns a `select`, `checkbox`, `number`, `textarea`, `file`, or future compatible field contract in `missing_fields`, the modal must render that contract instead of falling back to a plain text input.
 
 ## What is intentionally not extracted here
 

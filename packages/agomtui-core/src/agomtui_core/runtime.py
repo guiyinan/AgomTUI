@@ -577,14 +577,35 @@ def normalize_runtime_metadata_payload(
     payload: Mapping[str, Any],
     *,
     redundant_screen_action_keys: Mapping[str, set[str]] | None = None,
+    screen_patches: Mapping[str, Mapping[str, Any]] | None = None,
     action_patches: Mapping[str, Mapping[str, Any]] | None = None,
     hooks: Sequence[RuntimeMetadataHook] | None = None,
 ) -> dict[str, Any]:
-    """Apply runtime-only action pruning, patches, and hook-based normalization."""
+    """Apply runtime-only screen/action pruning, patches, and hook-based normalization."""
 
     normalized = validate_tui_metadata(copy.deepcopy(dict(payload)))
     redundant_map = redundant_screen_action_keys or {}
+    screen_patch_map = screen_patches or {}
     patches = action_patches or {}
+    screen_action_keys = {str(action.get("key") or "") for action in normalized.get("actions") or []}
+    patched_screens = 0
+
+    if screen_patch_map:
+        patched_screen_items: list[dict[str, Any]] = []
+        for screen in normalized.get("screens") or []:
+            screen_key = str(screen.get("key") or "")
+            patch = screen_patch_map.get(screen_key)
+            if patch and _screen_patch_actions_available(patch, screen_action_keys):
+                updated = copy.deepcopy(screen)
+                _deep_merge_runtime_patch(updated, patch)
+                patched_screen_items.append(updated)
+                if updated != screen:
+                    patched_screens += 1
+                continue
+            patched_screen_items.append(screen)
+        if patched_screens:
+            normalized["screens"] = patched_screen_items
+
     kept_actions: list[dict[str, Any]] = []
     removed = 0
     patched = 0
@@ -604,9 +625,13 @@ def normalize_runtime_metadata_payload(
             continue
         kept_actions.append(action)
 
-    if removed or patched:
+    if removed or patched or patched_screens:
         normalized["actions"] = kept_actions
         coverage = dict(normalized.get("coverage_summary") or {})
+        if patched_screens:
+            coverage["runtime_patched_screens"] = int(
+                coverage.get("runtime_patched_screens", 0) or 0
+            ) + patched_screens
         if removed:
             coverage["runtime_pruned_redundant_screen_actions"] = int(
                 coverage.get("runtime_pruned_redundant_screen_actions", 0) or 0
@@ -624,6 +649,19 @@ def normalize_runtime_metadata_payload(
             raise ValueError("Runtime metadata hook must return a metadata object")
         normalized = validate_tui_metadata(candidate)
     return normalized
+
+
+def _screen_patch_actions_available(patch: Mapping[str, Any], action_keys: set[str]) -> bool:
+    panels = patch.get("dashboard_panels")
+    if not isinstance(panels, list):
+        return True
+    for panel in panels:
+        if not isinstance(panel, Mapping):
+            continue
+        action_key = str(panel.get("action_key") or "").strip()
+        if action_key and action_key not in action_keys:
+            return False
+    return True
 
 
 class GenericRuntimeViewModelBuilder:
@@ -1514,6 +1552,14 @@ def _apply_runtime_action_patch(
             changed = True
         updated[key] = copy.deepcopy(value)
     return updated, changed
+
+
+def _deep_merge_runtime_patch(target: dict[str, Any], patch: Mapping[str, Any]) -> None:
+    for key, value in patch.items():
+        if isinstance(value, Mapping) and isinstance(target.get(key), dict):
+            _deep_merge_runtime_patch(target[key], value)
+            continue
+        target[key] = copy.deepcopy(value)
 
 
 def _humanize_token(token: str) -> str:

@@ -204,6 +204,57 @@ class RuntimeHelpersTests(unittest.TestCase):
         self.assertEqual(normalized["coverage_summary"]["runtime_patched_actions"], 1)
         self.assertEqual(normalized["coverage_summary"]["hook_applied"], 1)
 
+    def test_runtime_metadata_normalization_applies_screen_patches(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
+        )
+
+        normalized = normalize_runtime_metadata_payload(
+            validate_tui_metadata(payload),
+            screen_patches={
+                "overview.home": {
+                    "dashboard_panels": [
+                        {
+                            "key": "status",
+                            "title": "Status",
+                            "kind": "detail",
+                            "action_key": "overview.status",
+                            "target_screen": "overview.home",
+                        }
+                    ]
+                }
+            },
+        )
+
+        panel = normalized["screens"][0]["dashboard_panels"][0]
+        self.assertEqual(panel["target_screen"], "overview.home")
+        self.assertEqual(normalized["coverage_summary"]["runtime_patched_screens"], 1)
+
+    def test_runtime_metadata_screen_patch_skips_panels_with_unknown_actions(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
+        )
+
+        normalized = normalize_runtime_metadata_payload(
+            validate_tui_metadata(payload),
+            screen_patches={
+                "overview.home": {
+                    "dashboard_panels": [
+                        {
+                            "key": "missing",
+                            "title": "Missing",
+                            "kind": "detail",
+                            "action_key": "overview.missing",
+                            "target_screen": "overview.home",
+                        }
+                    ]
+                }
+            },
+        )
+
+        self.assertEqual(normalized["screens"][0]["dashboard_panels"], [])
+        self.assertNotIn("runtime_patched_screens", normalized.get("coverage_summary", {}))
+
     def test_metadata_overrides_patch_actions_and_fields_before_validation(self) -> None:
         payload = json.loads(
             (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
@@ -322,11 +373,13 @@ class RuntimeHelpersTests(unittest.TestCase):
                 "title": "Trend",
                 "kind": "chart",
                 "action_key": "overview.status",
+                "target_screen": "overview.home",
             },
             {
                 "key": "slot-panel",
                 "title": "Host Slot",
                 "kind": "host_slot",
+                "target_screen": "overview.home",
             },
         ]
         payload["actions"][0].update(
@@ -350,7 +403,25 @@ class RuntimeHelpersTests(unittest.TestCase):
         compacted = compact_tui_metadata_payload(validated)
 
         self.assertEqual(validated["actions"][0]["view_model"]["renderer"], "echarts")
+        self.assertEqual(validated["screens"][0]["dashboard_panels"][0]["target_screen"], "overview.home")
         self.assertEqual(compacted["actions"][0]["view_model"]["kind"], "table_chart")
+
+    def test_metadata_rejects_unknown_dashboard_target_screen(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
+        )
+        payload["screens"][0]["dashboard_panels"] = [
+            {
+                "key": "status-panel",
+                "title": "Status",
+                "kind": "detail",
+                "action_key": "overview.status",
+                "target_screen": "missing.screen",
+            }
+        ]
+
+        with self.assertRaises(TuiMetadataValidationError):
+            validate_tui_metadata(payload)
 
     def test_metadata_accepts_image_view_models(self) -> None:
         payload = json.loads(

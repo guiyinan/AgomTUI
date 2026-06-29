@@ -28,25 +28,29 @@
           "key": "nav-trend",
           "title": "NAV Trend",
           "kind": "chart",
-          "action_key": "overview.nav_trend"
+          "action_key": "overview.nav_trend",
+          "target_screen": "overview.rich"
         },
         {
           "key": "allocation-table-chart",
           "title": "Allocation Table + Chart",
           "kind": "table_chart",
-          "action_key": "overview.allocation"
+          "action_key": "overview.allocation",
+          "target_screen": "overview.rich"
         },
         {
           "key": "host-partial",
           "title": "Host Partial",
           "kind": "host_slot",
-          "action_key": "overview.host_partial"
+          "action_key": "overview.host_partial",
+          "target_screen": "overview.rich"
         },
         {
           "key": "image-preview",
           "title": "Image Preview",
           "kind": "image",
-          "action_key": "overview.image_preview"
+          "action_key": "overview.image_preview",
+          "target_screen": "overview.rich"
         }
       ]
     }

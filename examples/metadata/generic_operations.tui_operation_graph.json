@@ -30,6 +30,7 @@
           "title": "Account List",
           "kind": "datagrid",
           "action_key": "operations.accounts.list",
+          "target_screen": "operations.accounts",
           "columns": [
             {"key": "account_id", "label": "Account"},
             {"key": "status", "label": "Status"},

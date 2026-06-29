@@ -51,6 +51,22 @@ class RuntimeAssetHelperTests(unittest.TestCase):
         self.assertIn('pager.pagination_mode || pager.mode || ""', asset)
         self.assertIn('pagerMode === "limit_offset" ? "offset" : pagerMode', asset)
 
+    def test_runtime_js_uses_metadata_dashboard_targets(self) -> None:
+        asset = runtime_asset("js/tui-workbench.js").body.decode("utf-8")
+
+        self.assertIn("function dashboardTargetScreen(panel)", asset)
+        self.assertIn('return String(panel.target_screen || panel.screen_key || "");', asset)
+        self.assertNotIn('"account-positions": "execution.accounts"', asset)
+        self.assertNotIn('account: "execution.accounts"', asset)
+
+    def test_runtime_js_missing_fields_modal_reuses_field_renderer(self) -> None:
+        asset = runtime_asset("js/tui-workbench.js").body.decode("utf-8")
+
+        self.assertIn("const promptAction = result.action || currentAction(actionKey)", asset)
+        self.assertIn("renderField(promptAction", asset)
+        self.assertIn("coerceFieldValue(field, input.value, input.checked)", asset)
+        self.assertIn('form.querySelector("select, input, textarea")?.focus()', asset)
+
 
 if __name__ == "__main__":
     unittest.main()

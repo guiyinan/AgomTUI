@@ -140,6 +140,7 @@ ALLOWED_TUI_DASHBOARD_PANEL_KEYS = {
     "title",
     "kind",
     "action_key",
+    "target_screen",
     "status",
     "note",
     "max_rows",
@@ -402,6 +403,11 @@ def validate_tui_metadata(payload: dict[str, Any]) -> dict[str, Any]:
             action_key = str(panel.get("action_key") or "").strip()
             if action_key and action_key not in action_keys:
                 raise TuiMetadataValidationError(f"Dashboard panel references unknown action: {screen['key']}.{panel['key']}")
+            target_screen = str(panel.get("target_screen") or "").strip()
+            if target_screen and target_screen not in screen_keys:
+                raise TuiMetadataValidationError(
+                    f"Dashboard panel references unknown target screen: {screen['key']}.{panel['key']}"
+                )
             columns = panel.setdefault("columns", [])
             if not isinstance(columns, list):
                 raise TuiMetadataValidationError(f"Dashboard panel columns must be a list: {screen['key']}.{panel['key']}")
@@ -414,6 +420,7 @@ def validate_tui_metadata(payload: dict[str, Any]) -> dict[str, Any]:
             except (TypeError, ValueError) as exc:
                 raise TuiMetadataValidationError(f"Dashboard panel max_rows must be an integer: {screen['key']}.{panel['key']}") from exc
             panel.setdefault("action_key", "")
+            panel.setdefault("target_screen", "")
             panel.setdefault("status", "")
             panel.setdefault("note", "")
             panel.setdefault("layout_area", "")
@@ -465,6 +472,7 @@ def compact_tui_metadata_payload(payload: dict[str, Any]) -> dict[str, Any]:
                 continue
             for key, default in (
                 ("action_key", ""),
+                ("target_screen", ""),
                 ("status", ""),
                 ("note", ""),
                 ("layout_area", ""),
