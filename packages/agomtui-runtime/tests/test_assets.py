@@ -45,6 +45,12 @@ class RuntimeAssetHelperTests(unittest.TestCase):
         with self.assertRaises(RuntimeAssetNotFound):
             runtime_asset("../tui_workbench.reference.html")
 
+    def test_runtime_js_supports_legacy_limit_offset_pager_mode(self) -> None:
+        asset = runtime_asset("js/tui-workbench.js").body.decode("utf-8")
+
+        self.assertIn('pager.pagination_mode || pager.mode || ""', asset)
+        self.assertIn('pagerMode === "limit_offset" ? "offset" : pagerMode', asset)
+
 
 if __name__ == "__main__":
     unittest.main()

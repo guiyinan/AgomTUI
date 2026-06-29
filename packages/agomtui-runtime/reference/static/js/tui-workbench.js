@@ -2948,7 +2948,8 @@
 
     function paginationParamPatch(action, pager, params, delta) {
         const pagination = action.pagination || {};
-        const mode = pagination.mode || inferPaginationMode(action);
+        const pagerMode = String(pager.pagination_mode || pager.mode || "");
+        const mode = pagination.mode || (pagerMode === "limit_offset" ? "offset" : pagerMode) || inferPaginationMode(action);
         if (mode === "cursor") {
             const cursorParam = pagination.cursor_param || firstFieldKey(action, ["cursor", "nextCursor", "next_cursor"]);
             const cursor = delta > 0
