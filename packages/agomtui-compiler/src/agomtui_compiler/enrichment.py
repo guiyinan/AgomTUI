@@ -12,6 +12,9 @@ LIMIT_KEYS = ("limit", "page_size", "pageSize", "size")
 CURSOR_KEYS = ("cursor", "next_cursor", "nextCursor")
 ROW_KEYS = ("items", "results", "records", "rows", "data", "entries")
 TOTAL_KEYS = ("total", "count", "total_count", "totalRows", "total_rows")
+DEFAULT_LIMIT_PARAM = "limit"
+DEFAULT_OFFSET_PARAM = "offset"
+DEFAULT_PAGE_SIZE = 20
 
 
 def enrich_metadata_from_evidence(payload: dict[str, Any], evidence: EvidenceBundle) -> dict[str, Any]:
@@ -25,9 +28,9 @@ def enrich_metadata_from_evidence(payload: dict[str, Any], evidence: EvidenceBun
         endpoint = str(action.get("endpoint") or "")
         method = str(action.get("method") or "GET").upper()
         evidence_payload = endpoint_evidence.get((endpoint, method)) or endpoint_evidence.get((endpoint, "GET"))
-        if not evidence_payload:
-            continue
-        _enrich_action(action, evidence_payload)
+        if evidence_payload:
+            _enrich_action(action, evidence_payload)
+        _promote_datagrid_pagination(action)
     return enriched
 
 
@@ -75,6 +78,53 @@ def _enrich_action(action: dict[str, Any], evidence_payload: dict[str, Any]) -> 
         view_model.setdefault("page_path", page_path)
     if page_size_path:
         view_model.setdefault("page_size_path", page_size_path)
+
+
+def _promote_datagrid_pagination(action: dict[str, Any]) -> None:
+    view_model = action.get("view_model")
+    if not isinstance(view_model, dict):
+        return
+    view_kinds = {str(action.get("view_type") or ""), str(view_model.get("kind") or "")}
+    if "datagrid" not in view_kinds or not str(view_model.get("total_path") or "").strip():
+        return
+
+    pagination = action.get("pagination")
+    if not isinstance(pagination, dict):
+        pagination = {
+            "mode": "offset",
+            "offset_param": DEFAULT_OFFSET_PARAM,
+            "limit_param": DEFAULT_LIMIT_PARAM,
+        }
+        action["pagination"] = pagination
+
+    if pagination.get("mode") != "offset":
+        return
+    offset_param = str(pagination.get("offset_param") or "").strip()
+    limit_param = str(pagination.get("limit_param") or "").strip()
+    if not offset_param or not limit_param:
+        return
+    _ensure_hidden_query_field(action, key=limit_param, label="Limit", default=DEFAULT_PAGE_SIZE)
+    _ensure_hidden_query_field(action, key=offset_param, label="Offset", default=0)
+
+
+def _ensure_hidden_query_field(action: dict[str, Any], *, key: str, label: str, default: int) -> None:
+    fields = action.setdefault("fields", [])
+    if not isinstance(fields, list):
+        return
+    for field in fields:
+        if isinstance(field, dict) and str(field.get("key") or "") == key:
+            return
+    fields.append(
+        {
+            "key": key,
+            "label": label,
+            "input_type": "hidden",
+            "value_type": "integer",
+            "required": True,
+            "default": default,
+            "binding": "query",
+        }
+    )
 
 
 def _infer_pagination(evidence_payload: dict[str, Any]) -> dict[str, str] | None:

@@ -226,6 +226,70 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(action["view_model"]["rows_path"], "results")
         self.assertEqual(action["view_model"]["total_path"], "total")
         self.assertEqual(action["view_model"]["page_size_path"], "limit")
+        self.assertEqual(
+            {
+                field["key"]: {
+                    "input_type": field["input_type"],
+                    "value_type": field["value_type"],
+                    "required": field["required"],
+                    "default": field["default"],
+                    "binding": field["binding"],
+                }
+                for field in action["fields"]
+            },
+            {
+                "limit": {
+                    "input_type": "hidden",
+                    "value_type": "integer",
+                    "required": True,
+                    "default": 20,
+                    "binding": "query",
+                },
+                "offset": {
+                    "input_type": "hidden",
+                    "value_type": "integer",
+                    "required": True,
+                    "default": 0,
+                    "binding": "query",
+                },
+            },
+        )
+
+    def test_compile_promotes_total_path_datagrid_pagination_without_openapi_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            candidate_path = Path(temp_dir) / "candidate.json"
+            candidate = _pagination_candidate_metadata()
+            action = candidate["actions"][0]
+            action["view_type"] = "datagrid"
+            action["view_model"] = {
+                "kind": "datagrid",
+                "rows_path": "results",
+                "total_path": "total",
+            }
+            candidate_path.write_text(json.dumps(candidate), encoding="utf-8")
+            workflow = CompilerWorkflow(
+                collectors=[],
+                synthesizer=StaticCandidateSynthesizer(candidate_path),
+            )
+
+            result = workflow.compile(
+                context=CollectionContext(project_root=REPO_ROOT, host_kind="django"),
+                schema_path=REPO_ROOT
+                / "packages"
+                / "agomtui-core"
+                / "src"
+                / "agomtui_core"
+                / "schema"
+                / "tui_metadata.schema.v3.json",
+            )
+
+        action = result.validated_payload["actions"][0]
+        self.assertEqual(action["pagination"], {"mode": "offset", "offset_param": "offset", "limit_param": "limit"})
+        fields_by_key = {field["key"]: field for field in action["fields"]}
+        self.assertEqual(fields_by_key["limit"]["input_type"], "hidden")
+        self.assertEqual(fields_by_key["limit"]["default"], 20)
+        self.assertEqual(fields_by_key["offset"]["input_type"], "hidden")
+        self.assertEqual(fields_by_key["offset"]["default"], 0)
 
     def test_compile_skill_result_accepts_rich_component_metadata(self) -> None:
         workflow = CompilerWorkflow(
