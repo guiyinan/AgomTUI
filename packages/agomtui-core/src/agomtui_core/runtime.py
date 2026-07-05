@@ -595,9 +595,10 @@ def normalize_runtime_metadata_payload(
         for screen in normalized.get("screens") or []:
             screen_key = str(screen.get("key") or "")
             patch = screen_patch_map.get(screen_key)
-            if patch and _screen_patch_actions_available(patch, screen_action_keys):
+            if patch:
+                resolved_patch = _resolve_screen_patch(patch, screen_action_keys)
                 updated = copy.deepcopy(screen)
-                _deep_merge_runtime_patch(updated, patch)
+                _deep_merge_runtime_patch(updated, resolved_patch)
                 patched_screen_items.append(updated)
                 if updated != screen:
                     patched_screens += 1
@@ -651,17 +652,19 @@ def normalize_runtime_metadata_payload(
     return normalized
 
 
-def _screen_patch_actions_available(patch: Mapping[str, Any], action_keys: set[str]) -> bool:
+def _resolve_screen_patch(patch: Mapping[str, Any], action_keys: set[str]) -> dict[str, Any]:
+    resolved = copy.deepcopy(dict(patch))
     panels = patch.get("dashboard_panels")
     if not isinstance(panels, list):
-        return True
-    for panel in panels:
-        if not isinstance(panel, Mapping):
-            continue
-        action_key = str(panel.get("action_key") or "").strip()
-        if action_key and action_key not in action_keys:
-            return False
-    return True
+        return resolved
+    resolved["dashboard_panels"] = [
+        panel
+        for panel in panels
+        if not isinstance(panel, Mapping)
+        or str(panel.get("action_key") or "").strip() == ""
+        or str(panel.get("action_key") or "").strip() in action_keys
+    ]
+    return resolved
 
 
 class GenericRuntimeViewModelBuilder:

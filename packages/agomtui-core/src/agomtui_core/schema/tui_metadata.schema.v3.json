@@ -71,6 +71,7 @@
         "summary": { "type": "string" },
         "view_type": { "$ref": "#/$defs/viewType" },
         "status": { "enum": ["online", "planned", "hidden", "disabled"] },
+        "chrome_mode": { "enum": ["", "immersive"] },
         "default_action_key": { "type": "string" },
         "dashboard_panels": {
           "type": "array",

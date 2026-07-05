@@ -11,6 +11,7 @@ This package contains the browser runtime shell plus small host helpers for embe
 - governed action protocol handling for missing fields, confirmation, and password challenge responses
 - generic datagrid / detail / message / dashboard renderers
 - dashboard panel navigation via host-authored `dashboard_panels[].target_screen`, so the runtime does not hard-code product screen mappings
+- optional screen-level `chrome_mode=immersive` for home dashboards that should hide side task/inspector chrome without hard-coding a product screen key
 - built-in rich metadata renderers for `chart`, `image`, `kpi_trend`, `table_chart`, and safe `host_slot` views
 - renderer extension registration via `window.AgomTUIRenderers.register(name, rendererFn)` for host-owned renderers such as ECharts, CodeMirror, Mermaid, or Markdown
 - row-fill, inspector, pager, filter, modal, and raw-debug drawer behaviors

@@ -255,6 +255,41 @@ class RuntimeHelpersTests(unittest.TestCase):
         self.assertEqual(normalized["screens"][0]["dashboard_panels"], [])
         self.assertNotIn("runtime_patched_screens", normalized.get("coverage_summary", {}))
 
+    def test_runtime_metadata_screen_patch_keeps_known_panels_when_others_are_unknown(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
+        )
+
+        normalized = normalize_runtime_metadata_payload(
+            validate_tui_metadata(payload),
+            screen_patches={
+                "overview.home": {
+                    "dashboard_panels": [
+                        {
+                            "key": "status",
+                            "title": "Status",
+                            "kind": "detail",
+                            "action_key": "overview.status",
+                            "target_screen": "overview.home",
+                        },
+                        {
+                            "key": "missing",
+                            "title": "Missing",
+                            "kind": "detail",
+                            "action_key": "overview.missing",
+                            "target_screen": "overview.home",
+                        },
+                    ]
+                }
+            },
+        )
+
+        self.assertEqual(
+            [panel["action_key"] for panel in normalized["screens"][0]["dashboard_panels"]],
+            ["overview.status"],
+        )
+        self.assertEqual(normalized["coverage_summary"]["runtime_patched_screens"], 1)
+
     def test_metadata_overrides_patch_actions_and_fields_before_validation(self) -> None:
         payload = json.loads(
             (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
