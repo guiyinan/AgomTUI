@@ -67,6 +67,12 @@ class RuntimeAssetHelperTests(unittest.TestCase):
         self.assertIn("coerceFieldValue(field, input.value, input.checked)", asset)
         self.assertIn('form.querySelector("select, input, textarea")?.focus()', asset)
 
+    def test_runtime_js_uses_favorite_copy_instead_of_pin_copy(self) -> None:
+        asset = runtime_asset("js/tui-workbench.js").body.decode("utf-8")
+
+        self.assertIn("已收藏标记", asset)
+        self.assertNotIn("已置顶显示", asset)
+
 
 if __name__ == "__main__":
     unittest.main()
