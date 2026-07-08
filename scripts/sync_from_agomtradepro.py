@@ -211,6 +211,19 @@ def replace_regex_once(text: str, pattern: str, repl: str, label: str) -> str:
     return replaced
 
 
+def replace_once_or_keep(text: str, old: str, new: str, label: str) -> str:
+    old_count = text.count(old)
+    new_count = text.count(new)
+    if old_count == 1 and new_count == 0:
+        return text.replace(old, new, 1)
+    if old_count == 0 and new_count >= 1:
+        return text
+    raise SyncError(
+        f"Expected either one source match or an existing transformed match for {label}, "
+        f"found source={old_count}, transformed={new_count}."
+    )
+
+
 def transform_django_template_to_reference_html(text: str) -> str:
     text = replace_regex_once(text, r"^\s*\{% load static %\}\r?\n", "", "remove Django static loader")
     text = replace_once(text, "<title>TUI Workbench - AgomTradePro</title>", "<title>AgomTUI Workbench</title>", "reference title")
@@ -277,25 +290,25 @@ def transform_agomtradepro_runtime_js_to_reference(text: str) -> str:
             helper_block + "    function escapeHtml(value) {",
             "runtime config helper insertion",
         )
-    text = replace_once(
+    text = replace_once_or_keep(
         text,
         'fetchJson(`/api/tui/actions/${encodeURIComponent(panel.action_key)}/run/`, {',
         "fetchJson(actionRunUrl(panel.action_key), {",
         "dashboard panel action endpoint",
     )
-    text = replace_once(
+    text = replace_once_or_keep(
         text,
         'fetchJson(`/api/tui/screens/${encodeURIComponent(screenKey)}/`);',
         "fetchJson(screenUrl(screenKey));",
         "screen endpoint",
     )
-    text = replace_once(
+    text = replace_once_or_keep(
         text,
         'fetchJson(`/api/tui/actions/${encodeURIComponent(actualActionKey)}/run/`, {',
         "fetchJson(actionRunUrl(actualActionKey), {",
         "action endpoint",
     )
-    text = replace_once(
+    text = replace_once_or_keep(
         text,
         'fetchJson("/api/tui/catalog/");',
         "fetchJson(catalogUrl());",
