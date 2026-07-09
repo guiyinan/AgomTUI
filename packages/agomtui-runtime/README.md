@@ -11,6 +11,7 @@ This package contains the browser runtime shell plus small host helpers for embe
 - governed action protocol handling for missing fields, confirmation, and password challenge responses
 - generic datagrid / detail / message / dashboard renderers
 - dashboard panel navigation via host-authored `dashboard_panels[].target_screen`, so the runtime does not hard-code product screen mappings
+- host-authored user-facing UX metadata such as `screen.user_experience`, `dashboard_panels[].user_priority`, `dashboard_panels[].presentation_semantic`, `actions[].result_semantics`, and `actions[].fields[].presentation_semantic`
 - optional screen-level `chrome_mode=immersive` for home dashboards that should hide side task/inspector chrome without hard-coding a product screen key
 - built-in rich metadata renderers for `chart`, `image`, `kpi_trend`, `table_chart`, and safe `host_slot` views
 - renderer extension registration via `window.AgomTUIRenderers.register(name, rendererFn)` for host-owned renderers such as ECharts, CodeMirror, Mermaid, or Markdown
@@ -37,6 +38,12 @@ See `examples/hosts/stdlib_host.py` for a non-Django host that uses only Python'
 - may still reflect host payload conventions that should be normalized into public contracts over time
 
 Treat this as the product baseline, not the final host-agnostic runtime.
+
+The current reference shell already consumes the user-facing metadata contract to:
+
+- keep `p0` dashboard panels first
+- surface `primary_task`, `primary_outcome`, empty-state hints, and next-step hints in inspector / empty states
+- render copyable token / endpoint / prompt artifacts with dedicated detail presentation instead of collapsing them into generic two-column tables
 
 ## Governance protocol handling
 

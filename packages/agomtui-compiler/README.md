@@ -67,6 +67,16 @@ agomtui-compile check-usability --metadata-file examples\metadata\minimal.tui_op
 
 The usability checker validates the metadata contract first, then reports operator-facing gaps in screen navigation, dashboard panel wiring, action view models, and fields. `error` exits non-zero; `warning` is reported but does not fail unless `--fail-on-warning` is passed.
 
+For user-facing workbench releases, the metadata should also carry explicit UX intent instead of relying on prose-only review notes:
+
+- `screen.user_experience`: `journey`, `primary_task`, `primary_outcome`, `empty_state_hint`, `next_step_hint`
+- `dashboard_panels[].user_priority`: `p0/p1/p2`
+- `dashboard_panels[].presentation_semantic`: specialized rendering intent such as `copyable_secret`, `endpoint_list`, `multiline_prompt`
+- `actions[].result_semantics`: result-level artifact semantics for token / endpoint / prompt outputs
+- `actions[].fields[].presentation_semantic`: input intent such as `api_token`, `endpoint_url`, `prompt_text`
+
+Hosts may validate these fields downstream, but compiler-generated metadata should already emit them when evidence supports a user-facing screen.
+
 Validate and compact a metadata file without running collectors:
 
 ```powershell

@@ -799,13 +799,15 @@
         const id = `tui-${action.key}-${field.key}`;
         const value = field.default || "";
         const required = field.required ? "required" : "";
+        const semanticClass = fieldPresentationClass(field);
+        const fieldClass = semanticClass ? `tui-field ${semanticClass}` : "tui-field";
         if (field.input_type === "hidden") {
             return `<input id="${escapeHtml(id)}" name="${escapeHtml(field.key)}" type="hidden" value="${escapeHtml(value)}">`;
         }
         if (field.input_type === "select") {
             const options = field.options || [];
             return `
-                <label class="tui-field" for="${escapeHtml(id)}">
+                <label class="${escapeHtml(fieldClass)}" for="${escapeHtml(id)}">
                     <span>${escapeHtml(field.label)}</span>
                     <select id="${escapeHtml(id)}" name="${escapeHtml(field.key)}" ${required}>
                         ${options.map((option) => {
@@ -828,9 +830,9 @@
         }
         if (field.input_type === "textarea") {
             return `
-                <label class="tui-field" for="${escapeHtml(id)}">
+                <label class="${escapeHtml(fieldClass)}" for="${escapeHtml(id)}">
                     <span>${escapeHtml(field.label)}</span>
-                    <textarea id="${escapeHtml(id)}" name="${escapeHtml(field.key)}" rows="3" ${required} placeholder="${escapeHtml(field.placeholder || "")}">${escapeHtml(value)}</textarea>
+                    <textarea id="${escapeHtml(id)}" name="${escapeHtml(field.key)}" rows="${field.presentation_semantic === "prompt_text" ? "8" : "3"}" ${required} placeholder="${escapeHtml(field.placeholder || "")}">${escapeHtml(value)}</textarea>
                 </label>
             `;
         }
@@ -843,11 +845,16 @@
             `;
         }
         return `
-            <label class="tui-field" for="${escapeHtml(id)}">
+            <label class="${escapeHtml(fieldClass)}" for="${escapeHtml(id)}">
                 <span>${escapeHtml(field.label)}</span>
                 <input id="${escapeHtml(id)}" name="${escapeHtml(field.key)}" type="${escapeHtml(field.input_type || "text")}" value="${escapeHtml(value)}" ${required} placeholder="${escapeHtml(field.placeholder || "")}">
             </label>
         `;
+    }
+
+    function fieldPresentationClass(field) {
+        const semantic = String(field?.presentation_semantic || "").trim();
+        return semantic ? `tui-field-${semantic.replace(/[^a-z0-9_-]+/gi, "-")}` : "";
     }
 
     function coerceFieldValue(field, value, checked) {
@@ -952,12 +959,15 @@
         renderActions(screenSpec.actions || [], screen);
         const actionSummary = summarizeActions(screenSpec.actions || []);
         const businessContext = screen.business_context || {};
+        const userExperience = screenUserExperience(screen);
         renderInspector({
             title: screen.label,
-            body: screen.summary,
+            body: userExperience.primary_task || screen.summary,
             rows: [
                 ["工作区", screenSpec.module.label],
                 ["视图", viewLabel(screen.view_type)],
+                ["主任务", userExperience.primary_task || screen.summary || "-"],
+                ["目标产出", userExperience.primary_outcome || businessContext.decision_output || "-"],
                 ["主流程", actionSummary.primary],
                 ["支撑检查", actionSummary.support],
                 ["高级查询", actionSummary.advanced],
@@ -970,11 +980,12 @@
                 {
                     title: "操作提示",
                     body: [
+                        userExperience.empty_state_hint,
                         actionSummary.operation
                             ? "本工作区包含提交或 AI 协助动作，已收藏标记；提交前会按策略要求确认。"
                             : "本工作区当前提供打开、查询和检查任务；结果按业务视图呈现，不展示内部接口。"
                     ],
-                    rows: [],
+                    rows: [["下一步", userExperience.next_step_hint || "按主流程继续。"]],
                 },
             ],
         });
@@ -987,7 +998,13 @@
             setStatus("加载默认视图");
             runAction(defaultAction.key, defaultForm);
         } else {
-            els.main.innerHTML = `<div class="tui-empty-state">${escapeHtml(screen.summary)}<br>请选择左侧任务或按 F6 执行下一主流程。</div>`;
+            els.main.innerHTML = renderEmptyState(
+                userExperience.primary_task || screen.summary || "当前工作区暂无默认视图。",
+                [
+                    userExperience.empty_state_hint || "请选择左侧任务或按 F6 执行下一主流程。",
+                    userExperience.next_step_hint || "完成当前检查后继续下一步。",
+                ].filter(Boolean),
+            );
             setStatus("工作区就绪");
         }
     }
@@ -1009,6 +1026,30 @@
 
     function hasDashboardPanels(screen) {
         return Array.isArray(screen?.dashboard_panels) && screen.dashboard_panels.length > 0;
+    }
+
+    function screenUserExperience(screen) {
+        return screen?.user_experience || {};
+    }
+
+    function userPriorityRank(priority) {
+        const ranks = { p0: 0, p1: 1, p2: 2 };
+        return ranks[String(priority || "").toLowerCase()] ?? 9;
+    }
+
+    function orderedDashboardPanels(screen, actions) {
+        const configuredPanels = screen.dashboard_panels && screen.dashboard_panels.length
+            ? screen.dashboard_panels
+            : defaultDashboardPanels(actions || []);
+        return configuredPanels
+            .map((panel, index) => ({ ...panel, __tui_order: index }))
+            .sort((left, right) => userPriorityRank(left.user_priority) - userPriorityRank(right.user_priority)
+                || Number(left.__tui_order) - Number(right.__tui_order))
+            .map((panel) => {
+                const next = { ...panel };
+                delete next.__tui_order;
+                return next;
+            });
     }
 
     function isImmersiveDashboardScreen(screen) {
@@ -1068,12 +1109,11 @@
 
     function renderDashboardHome(screenSpec) {
         const screen = screenSpec.screen;
-        const panels = screen.dashboard_panels && screen.dashboard_panels.length
-            ? screen.dashboard_panels
-            : defaultDashboardPanels(screenSpec.actions || []);
+        const panels = orderedDashboardPanels(screen, screenSpec.actions || []);
         const immersiveDashboard = isImmersiveDashboardScreen(screen);
         const actionSummary = summarizeActions(screenSpec.actions || []);
         const businessContext = screen.business_context || {};
+        const userExperience = screenUserExperience(screen);
         const layout = dashboardLayout(panels);
         setWorkspaceViewKind("dashboard");
         els.mainTitle.textContent = immersiveDashboard ? "系统首页" : `${screen.label} 概览`;
@@ -1089,10 +1129,12 @@
         `;
         renderInspector({
             title: screen.label,
-            body: screen.summary,
+            body: userExperience.primary_task || screen.summary,
             rows: [
                 ["工作区", screenSpec.module.label],
                 ["布局", immersiveDashboard ? "系统首页总控台" : "业务概览面板"],
+                ["主任务", userExperience.primary_task || screen.summary || "-"],
+                ["目标产出", userExperience.primary_outcome || businessContext.decision_output || "-"],
                 ["主流程", actionSummary.primary],
                 ["支撑检查", actionSummary.support],
                 ["任务", screen.action_count],
@@ -1102,11 +1144,12 @@
                 {
                     title: "操作提示",
                     body: [
+                        userExperience.empty_state_hint,
                         immersiveDashboard
                             ? "总览面板来自已审核 action；点击面板可进入对应业务屏继续处理。"
                             : "概览面板用于先看全局摘要；左侧任务区可以继续打开明细或执行补充查询。",
                     ],
-                    rows: [],
+                    rows: [["下一步", userExperience.next_step_hint || "按优先级处理 P0 面板。"]],
                 },
             ],
         });
@@ -1224,6 +1267,7 @@
             if (!renderDashboardRegisteredRenderer(panel, result.view_model, container)) {
                 container.innerHTML = `<h3>${escapeHtml(panel.title)}</h3>${renderDashboardPanelBody(panel, result.view_model)}`;
                 processHostSlot(container);
+                bindCopyButtons(container);
             }
             setLastRefresh();
         } catch (error) {
@@ -1336,6 +1380,7 @@
 
     function renderPanelDetail(panel, viewModel) {
         const fields = (viewModel.fields || []).slice(0, Number(panel.max_rows || 8));
+        const semantic = panelPresentationSemantic(panel);
         if (!fields.length) {
             const nested = (viewModel.nested || []).slice(0, Number(panel.max_rows || 8));
             if (nested.length) {
@@ -1343,9 +1388,137 @@
             }
             return renderPanelPlaceholder(panel, "暂无摘要数据。");
         }
+        if (semantic === "copyable_secret" || semantic === "endpoint_list" || semantic === "multiline_prompt") {
+            return `
+                ${renderArtifactCollection(fields, [semantic], { compact: true, note: panel.note, fallbackRows: Number(panel.max_rows || 8) })}
+            `;
+        }
         return `
             ${renderMiniTable(["项目", "值"], fields.map((field) => [field.label, field.value]))}
             ${panel.note ? `<div class="tui-panel-note">${escapeHtml(panel.note)}</div>` : ""}
+        `;
+    }
+
+    function panelPresentationSemantic(panel) {
+        const explicit = String(panel?.presentation_semantic || "").trim();
+        if (explicit) {
+            return explicit;
+        }
+        const action = currentAction(panel?.action_key || "");
+        return primaryResultSemantic(action);
+    }
+
+    function primaryResultSemantic(action) {
+        const semantics = Array.isArray(action?.result_semantics) ? action.result_semantics : [];
+        return semantics.find((semantic) => ["copyable_secret", "endpoint_list", "multiline_prompt"].includes(semantic)) || semantics[0] || "";
+    }
+
+    function activeResultSemantics() {
+        const action = currentAction(state.lastAction);
+        return Array.isArray(action?.result_semantics) ? action.result_semantics : [];
+    }
+
+    function fieldLooksLikeToken(field) {
+        const haystack = `${field?.key || ""} ${field?.label || ""}`.toLowerCase();
+        return /token|secret|api[_\s-]?key|access[_\s-]?key/.test(haystack);
+    }
+
+    function fieldLooksLikeEndpoint(field) {
+        const textValue = String(field?.value ?? "").trim();
+        const haystack = `${field?.key || ""} ${field?.label || ""}`.toLowerCase();
+        return /^https?:\/\//i.test(textValue) || /endpoint|route api|web chat|catalog|base url|api root|url/.test(haystack);
+    }
+
+    function fieldLooksLikePrompt(field) {
+        const textValue = String(field?.value ?? "");
+        const haystack = `${field?.key || ""} ${field?.label || ""}`.toLowerCase();
+        return /prompt/.test(haystack) || textValue.includes("\n") || textValue.length > 120;
+    }
+
+    function selectArtifactFields(fields, semantics) {
+        const semanticSet = new Set((semantics || []).map((item) => String(item || "")));
+        const sourceFields = Array.isArray(fields) ? fields : [];
+        if (semanticSet.has("multiline_prompt")) {
+            const promptFields = sourceFields.filter(fieldLooksLikePrompt);
+            return promptFields.length ? promptFields : sourceFields.slice(-1);
+        }
+        if (semanticSet.has("endpoint_list")) {
+            const endpointFields = sourceFields.filter(fieldLooksLikeEndpoint);
+            return endpointFields.length ? endpointFields : sourceFields;
+        }
+        if (semanticSet.has("copyable_secret")) {
+            const tokenFields = sourceFields.filter(fieldLooksLikeToken);
+            return tokenFields.length ? tokenFields : sourceFields.slice(0, 1);
+        }
+        return [];
+    }
+
+    function artifactFieldIds(fields, prefix) {
+        return fields.map((field, index) => {
+            const base = sanitizeDashboardArea(`${prefix}-${field.key || field.label || index + 1}`) || `${prefix}-${index + 1}`;
+            return `${base}-${index + 1}`;
+        });
+    }
+
+    function supportingDetailRows(fields, artifactFields, maxRows) {
+        const artifactSet = new Set((artifactFields || []).map((field) => `${field.key || ""}::${field.label || ""}`));
+        return (fields || [])
+            .filter((field) => !artifactSet.has(`${field.key || ""}::${field.label || ""}`))
+            .slice(0, maxRows);
+    }
+
+    function renderArtifactCollection(fields, semantics, options = {}) {
+        const compact = Boolean(options.compact);
+        const artifactFields = selectArtifactFields(fields, semantics);
+        if (!artifactFields.length) {
+            return renderMiniTable(
+                ["项目", "值"],
+                (fields || []).slice(0, Number(options.fallbackRows || 8)).map((field) => [field.label, field.value]),
+            );
+        }
+        const ids = artifactFieldIds(artifactFields, compact ? "panel-artifact" : "detail-artifact");
+        const supportRows = supportingDetailRows(fields, artifactFields, compact ? 3 : 12);
+        return `
+            <div class="tui-artifact-stack ${compact ? "is-compact" : ""}">
+                ${artifactFields.map((field, index) => renderArtifactField(field, ids[index], semantics, { compact })).join("")}
+            </div>
+            ${supportRows.length ? `
+                <dl class="tui-detail-grid tui-artifact-support">
+                    ${supportRows.map((field) => `
+                        <dt>${escapeHtml(field.label)}</dt>
+                        <dd>${escapeHtml(String(field.value ?? "-"))}</dd>
+                    `).join("")}
+                </dl>
+            ` : ""}
+            ${options.note ? `<div class="tui-panel-note">${escapeHtml(options.note)}</div>` : ""}
+        `;
+    }
+
+    function renderArtifactField(field, fieldId, semantics, options = {}) {
+        const compact = Boolean(options.compact);
+        const semanticSet = new Set((semantics || []).map((item) => String(item || "")));
+        const label = String(field?.label || field?.key || "值");
+        const value = String(field?.value ?? "");
+        const isPrompt = semanticSet.has("multiline_prompt") && fieldLooksLikePrompt(field);
+        const isEndpoint = semanticSet.has("endpoint_list") && fieldLooksLikeEndpoint(field);
+        const artifactClass = [
+            "tui-artifact",
+            isPrompt ? "is-prompt" : "",
+            isEndpoint ? "is-endpoint" : "",
+            semanticSet.has("copyable_secret") ? "is-secret" : "",
+            compact ? "is-compact" : "",
+        ].filter(Boolean).join(" ");
+        const body = isPrompt
+            ? `<pre id="${escapeHtml(fieldId)}" class="tui-artifact-pre">${escapeHtml(value)}</pre>`
+            : `<code id="${escapeHtml(fieldId)}" class="tui-artifact-code">${escapeHtml(value)}</code>`;
+        return `
+            <section class="${artifactClass}">
+                <div class="tui-artifact-head">
+                    <strong>${escapeHtml(label)}</strong>
+                    <button type="button" class="tui-copy-button" data-copy-target="${escapeHtml(fieldId)}">复制</button>
+                </div>
+                ${body}
+            </section>
         `;
     }
 
@@ -2018,6 +2191,7 @@
             resetGridState({ preserveRowContext: true });
             renderMessage(viewModel);
         }
+        bindCopyButtons(els.main);
         bindDecisionCueActions();
         updatePager(viewModel.pager || null);
         refreshRowFillButtons();
@@ -2166,6 +2340,49 @@
                 ` : ""}
             </div>
         `;
+    }
+
+    function bindCopyButtons(container) {
+        (container || document).querySelectorAll("[data-copy-target]").forEach((button) => {
+            button.addEventListener("click", async () => {
+                const targetId = button.dataset.copyTarget;
+                const source = targetId ? document.getElementById(targetId) : null;
+                const text = source ? String(source.textContent || "").trim() : "";
+                if (!text) {
+                    setStatus("没有可复制内容");
+                    return;
+                }
+                const copied = await copyTextToClipboard(text);
+                setStatus(copied ? "已复制到剪贴板" : "复制失败，请手动复制");
+            });
+        });
+    }
+
+    async function copyTextToClipboard(text) {
+        try {
+            if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch (error) {
+            // Fall back to a hidden textarea for browsers without clipboard permission.
+        }
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "readonly");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        textarea.style.pointerEvents = "none";
+        document.body.appendChild(textarea);
+        textarea.select();
+        let copied = false;
+        try {
+            copied = document.execCommand("copy");
+        } catch (error) {
+            copied = false;
+        }
+        textarea.remove();
+        return copied;
     }
 
     function renderChart(viewModel) {
@@ -2485,15 +2702,21 @@
     function renderDetail(viewModel) {
         const fields = viewModel.fields || [];
         const nested = viewModel.nested || [];
+        const semantics = activeResultSemantics();
+        const hasArtifactSemantics = semantics.some((semantic) => ["copyable_secret", "endpoint_list", "multiline_prompt"].includes(semantic));
         els.main.innerHTML = `
             <div class="tui-view-status">${escapeHtml(viewModel.status)} / ${escapeHtml(viewModel.title)}</div>
             ${renderDecisionCue(viewModel)}
-            <dl class="tui-detail-grid">
-                ${fields.map((field) => `
-                    <dt>${escapeHtml(field.label)}</dt>
-                    <dd>${escapeHtml(field.value)}</dd>
-                `).join("")}
-            </dl>
+            ${hasArtifactSemantics
+                ? renderArtifactCollection(fields, semantics, { fallbackRows: 12 })
+                : `
+                    <dl class="tui-detail-grid">
+                        ${fields.map((field) => `
+                            <dt>${escapeHtml(field.label)}</dt>
+                            <dd>${escapeHtml(field.value)}</dd>
+                        `).join("")}
+                    </dl>
+                `}
             ${nested.length ? `
                 <div class="tui-nested-list">
                     ${nested.map((item) => `<span>${escapeHtml(item.label)}: ${escapeHtml(item.count)} 行</span>`).join("")}
@@ -2530,7 +2753,8 @@
     function renderDecisionCue(viewModel) {
         const screen = state.screen?.screen || {};
         const context = screen.business_context || {};
-        if (!context.decision_output && !context.objective) {
+        const userExperience = screenUserExperience(screen);
+        if (!context.decision_output && !context.objective && !userExperience.primary_outcome) {
             return "";
         }
         const workflow = screen.workflow || {};
@@ -2539,7 +2763,7 @@
         const summary = summarizeActions(actions);
         const evidence = resultEvidenceLabel(viewModel);
         const rows = [
-            ["判断产出", context.decision_output || context.objective],
+            ["判断产出", userExperience.primary_outcome || context.decision_output || context.objective],
             ["当前证据", evidence],
         ];
         const cueActions = [];
@@ -2568,6 +2792,8 @@
                 key: "F4",
                 title: "进入流程下一屏",
             });
+        } else if (userExperience.next_step_hint) {
+            rows.push(["下一步", userExperience.next_step_hint]);
         }
         return `
             <section class="tui-decision-cue">
