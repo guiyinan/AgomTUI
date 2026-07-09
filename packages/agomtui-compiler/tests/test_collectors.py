@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from agomtui_core import TuiMetadataValidationError
 from agomtui_compiler.cli import StaticCandidateSynthesizer, _build_collectors, _build_request_payload, build_parser
 from agomtui_compiler.collector import CollectionContext, DjangoContractManifestCollector, OpenApiSpecCollector
 from agomtui_compiler.synthesizer import JsonFileSkillBackend, SkillBackedSynthesizer
@@ -149,6 +150,23 @@ class CollectorTests(unittest.TestCase):
         self.assertIn("screen.empty", codes)
         self.assertIn("view_model.missing_renderer_path", codes)
         self.assertIn("field.hidden_required_without_default", codes)
+
+    def test_usability_checker_requires_default_action_on_non_dashboard_screens(self) -> None:
+        payload = json.loads((EXAMPLES / "minimal.tui_operation_graph.json").read_text(encoding="utf-8"))
+        payload["screens"][0].pop("default_action_key", None)
+
+        result = check_tui_metadata_usability(payload)
+
+        self.assertFalse(result.ok)
+        self.assertIn("screen.missing_default_action", {issue.code for issue in result.issues})
+
+    def test_dashboard_metadata_requires_p0_panel(self) -> None:
+        payload = json.loads((EXAMPLES / "rich_components.tui_operation_graph.json").read_text(encoding="utf-8"))
+        for panel in payload["screens"][0]["dashboard_panels"]:
+            panel["user_priority"] = "p2"
+
+        with self.assertRaises(TuiMetadataValidationError):
+            check_tui_metadata_usability(payload)
 
     def test_compile_applies_manual_overrides_before_publish(self) -> None:
         workflow = CompilerWorkflow(

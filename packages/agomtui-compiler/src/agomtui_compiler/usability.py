@@ -98,6 +98,7 @@ def _check_screen(
     path = f"screens[{screen_index}]"
     panels = list(_dict_items(screen.get("dashboard_panels")))
     default_action_key = str(screen.get("default_action_key") or "").strip()
+    journey = str(dict(screen.get("user_experience") or {}).get("journey") or "")
 
     if not actions_on_screen and not panels:
         _add_issue(
@@ -108,13 +109,22 @@ def _check_screen(
             path,
         )
 
-    if not default_action_key and not panels and len(actions_on_screen) > 1:
+    if journey != "dashboard" and not default_action_key:
         _add_issue(
             issues,
-            "warning",
+            "error",
             "screen.missing_default_action",
-            f"Screen has multiple actions but no default_action_key: {screen_key}",
+            f"Non-dashboard screen has no default_action_key: {screen_key}",
             path,
+        )
+
+    if panels and not any(str(panel.get("user_priority") or "") == "p0" for panel in panels):
+        _add_issue(
+            issues,
+            "error",
+            "screen.missing_p0_panel",
+            f"Dashboard screen has no p0 panel: {screen_key}",
+            f"{path}.dashboard_panels",
         )
 
     if default_action_key:

@@ -239,6 +239,7 @@ class RuntimeHelpersTests(unittest.TestCase):
             validate_tui_metadata(payload),
             screen_patches={
                 "overview.home": {
+                    "summary": "Patched summary should not survive when all panels are invalid.",
                     "dashboard_panels": [
                         {
                             "key": "missing",
@@ -253,6 +254,7 @@ class RuntimeHelpersTests(unittest.TestCase):
         )
 
         self.assertEqual(normalized["screens"][0]["dashboard_panels"], [])
+        self.assertEqual(normalized["screens"][0]["summary"], "Open the primary status view.")
         self.assertNotIn("runtime_patched_screens", normalized.get("coverage_summary", {}))
 
     def test_runtime_metadata_screen_patch_keeps_known_panels_when_others_are_unknown(self) -> None:
@@ -486,6 +488,65 @@ class RuntimeHelpersTests(unittest.TestCase):
 
         self.assertEqual(validated["actions"][0]["view_model"]["kind"], "image")
         self.assertEqual(validated["screens"][0]["dashboard_panels"][0]["kind"], "image")
+
+    def test_metadata_accepts_user_experience_and_semantic_contract(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
+        )
+        payload["screens"][0]["user_experience"] = {
+            "journey": "workspace",
+            "primary_task": "Review the current system status.",
+            "primary_outcome": "Know whether the host is healthy enough to continue.",
+            "empty_state_hint": "Run the main status check first.",
+            "next_step_hint": "Move to the next operator task after the status check.",
+        }
+        payload["actions"][0]["result_semantics"] = ["primary_status"]
+        payload["actions"][0]["fields"] = [
+            {
+                "key": "operator_prompt",
+                "label": "Operator Prompt",
+                "input_type": "textarea",
+                "value_type": "string",
+                "presentation_semantic": "prompt_text",
+                "required": False,
+            }
+        ]
+        payload["screens"][0]["dashboard_panels"] = [
+            {
+                "key": "status-panel",
+                "title": "Status",
+                "kind": "detail",
+                "action_key": "overview.status",
+                "target_screen": "overview.home",
+                "user_priority": "p0",
+                "presentation_semantic": "primary_status",
+            }
+        ]
+
+        validated = validate_tui_metadata(payload)
+
+        self.assertEqual(validated["screens"][0]["user_experience"]["journey"], "workspace")
+        self.assertEqual(validated["actions"][0]["result_semantics"], ["primary_status"])
+        self.assertEqual(validated["actions"][0]["fields"][0]["presentation_semantic"], "prompt_text")
+        self.assertEqual(validated["screens"][0]["dashboard_panels"][0]["user_priority"], "p0")
+
+    def test_metadata_rejects_prompt_presentation_semantic_without_textarea(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
+        )
+        payload["actions"][0]["fields"] = [
+            {
+                "key": "operator_prompt",
+                "label": "Operator Prompt",
+                "input_type": "text",
+                "value_type": "string",
+                "presentation_semantic": "prompt_text",
+                "required": False,
+            }
+        ]
+
+        with self.assertRaises(TuiMetadataValidationError):
+            validate_tui_metadata(payload)
 
     def test_metadata_rejects_unsafe_renderer_name(self) -> None:
         payload = json.loads(

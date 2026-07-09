@@ -73,6 +73,14 @@ class RuntimeAssetHelperTests(unittest.TestCase):
         self.assertIn("已收藏标记", asset)
         self.assertNotIn("已置顶显示", asset)
 
+    def test_runtime_js_suppresses_default_auto_run_before_catalog_drilldown(self) -> None:
+        asset = runtime_asset("js/tui-workbench.js").body.decode("utf-8")
+
+        self.assertIn("loadScreen(normalizedKey, { suppressAutoAction: true })", asset)
+        self.assertIn("function renderScreen(screenSpec, options = {})", asset)
+        self.assertIn("function loadScreen(screenKey, options = {})", asset)
+        self.assertIn("defaultAction && !options.suppressAutoAction", asset)
+
 
 if __name__ == "__main__":
     unittest.main()

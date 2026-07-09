@@ -721,6 +721,36 @@
         return form?.dataset?.actionUiKey || form?.dataset?.actionKey || "";
     }
 
+    function actionFormElement(action) {
+        if (!action) {
+            return null;
+        }
+        return els.actions.querySelector(
+            `[data-action-ui-key="${CSS.escape(actionUiKey(action))}"]`
+        );
+    }
+
+    async function openScreenFromCatalog(screenKey, actionKey = "") {
+        const normalizedKey = String(screenKey || "").trim();
+        if (!normalizedKey) {
+            return null;
+        }
+        const normalizedActionKey = String(actionKey || "").trim();
+        if (!normalizedActionKey) {
+            return loadScreen(normalizedKey);
+        }
+        const screenSpec = await loadScreen(normalizedKey, { suppressAutoAction: true });
+        if (!screenSpec || !normalizedActionKey) {
+            return screenSpec;
+        }
+        const action = currentAction(normalizedActionKey);
+        if (!action) {
+            return screenSpec;
+        }
+        await runAction(action.key, actionFormElement(action));
+        return screenSpec;
+    }
+
     function triggerActionForm(form) {
         const actionRef = actionRefFromForm(form);
         if (!actionRef) {
@@ -775,7 +805,7 @@
                             <span>${escapeHtml(module.action_count || 0)}</span>
                         </div>
                         ${(module.screens || []).map((screen) => `
-                            <button class="tui-screen-button" type="button" data-screen-key="${escapeHtml(screen.key)}">
+                            <button class="tui-screen-button" type="button" data-screen-key="${escapeHtml(screen.key)}" data-screen-action-key="${escapeHtml(screen.default_action_key || "")}">
                                 <span>${++screenIndex} ${escapeHtml(screen.label)}</span>
                                 <small>${escapeHtml(viewLabel(screen.view_type))} / ${escapeHtml(screen.action_count)} 项</small>
                             </button>
@@ -785,7 +815,10 @@
             </section>
         `).join("");
         els.moduleTree.querySelectorAll("[data-screen-key]").forEach((button) => {
-            button.addEventListener("click", () => loadScreen(button.dataset.screenKey));
+            button.addEventListener("click", () => openScreenFromCatalog(
+                button.dataset.screenKey,
+                button.dataset.screenActionKey
+            ));
         });
     }
 
@@ -924,7 +957,7 @@
         grid.dataset.viewKind = String(kind);
     }
 
-    function renderScreen(screenSpec) {
+    function renderScreen(screenSpec, options = {}) {
         state.screen = screenSpec;
         state.lastRaw = null;
         state.lastPager = null;
@@ -992,7 +1025,7 @@
         updatePager(null);
         updateRawDrawer();
         const defaultAction = resolveDefaultAction(screenSpec);
-        if (defaultAction) {
+        if (defaultAction && !options.suppressAutoAction) {
             const defaultForm = els.actions.querySelector(`[data-action-ui-key="${CSS.escape(actionUiKey(defaultAction))}"]`);
             els.main.innerHTML = '<div class="tui-loading">加载默认视图...</div>';
             setStatus("加载默认视图");
@@ -2071,17 +2104,19 @@
         });
     }
 
-    async function loadScreen(screenKey) {
+    async function loadScreen(screenKey, options = {}) {
         try {
             closeMenu();
             closeModal();
             els.main.innerHTML = '<div class="tui-loading">正在加载工作区...</div>';
             setStatus("加载工作区");
             const screenSpec = await fetchJson(screenUrl(screenKey));
-            renderScreen(screenSpec);
+            renderScreen(screenSpec, options);
+            return screenSpec;
         } catch (error) {
             resetLocationInput();
             renderError(error.message);
+            return null;
         }
     }
 

@@ -46,6 +46,34 @@ ALLOWED_TUI_VIEW_MODEL_KINDS = {
     "host_slot",
     "custom",
 }
+ALLOWED_TUI_SCREEN_JOURNEYS = {
+    "dashboard",
+    "workspace",
+    "self_service",
+    "admin",
+    "toolbox",
+    "debug",
+}
+ALLOWED_TUI_PANEL_USER_PRIORITIES = {"p0", "p1", "p2"}
+ALLOWED_TUI_PRESENTATION_SEMANTICS = {
+    "primary_status",
+    "primary_list",
+    "supporting_list",
+    "copyable_secret",
+    "endpoint_list",
+    "multiline_prompt",
+    "next_step",
+    "supporting_detail",
+    "debug_only",
+}
+ALLOWED_TUI_FIELD_PRESENTATION_SEMANTICS = {
+    "identifier",
+    "primary_selector",
+    "api_token",
+    "endpoint_url",
+    "prompt_text",
+    "debug_only",
+}
 ALLOWED_TUI_SENSITIVE_LEVELS = {"none", "low", "medium", "high", "critical"}
 ALLOWED_TUI_FIELD_INPUT_TYPES = {
     "checkbox",
@@ -83,6 +111,7 @@ ALLOWED_TUI_FIELD_KEYS = {
     "accept",
     "aliases",
     "semantic",
+    "presentation_semantic",
     "unit",
     "value_type",
 }
@@ -144,6 +173,8 @@ ALLOWED_TUI_DASHBOARD_PANEL_KEYS = {
     "status",
     "note",
     "max_rows",
+    "user_priority",
+    "presentation_semantic",
     "columns",
     "layout_area",
 }
@@ -312,6 +343,8 @@ def validate_tui_metadata(payload: dict[str, Any]) -> dict[str, Any]:
         dashboard_panels = screen.setdefault("dashboard_panels", [])
         if not isinstance(dashboard_panels, list):
             raise TuiMetadataValidationError(f"Screen dashboard_panels must be a list: {screen['key']}")
+        screen["user_experience"] = _default_screen_user_experience(screen)
+        _validate_screen_user_experience(screen)
 
     screen_module_by_key = {str(screen["key"]): str(screen["module_key"]) for screen in screens}
 
@@ -357,6 +390,8 @@ def validate_tui_metadata(payload: dict[str, Any]) -> dict[str, Any]:
             field.setdefault("default", "")
             field.setdefault("placeholder", "")
             _validate_field(action, field)
+        action["result_semantics"] = _normalize_result_semantics(action)
+        _validate_result_semantics(action)
         view_model = action.setdefault("view_model", {})
         if not isinstance(view_model, dict):
             raise TuiMetadataValidationError(f"Action view_model must be an object: {action['key']}")
@@ -421,9 +456,25 @@ def validate_tui_metadata(payload: dict[str, Any]) -> dict[str, Any]:
                 raise TuiMetadataValidationError(f"Dashboard panel max_rows must be an integer: {screen['key']}.{panel['key']}") from exc
             panel.setdefault("action_key", "")
             panel.setdefault("target_screen", "")
+            panel.setdefault(
+                "user_priority",
+                "p0"
+                if not any(
+                    isinstance(existing, dict) and existing.get("user_priority") == "p0"
+                    for existing in screen.get("dashboard_panels", [])
+                )
+                else "p2",
+            )
+            panel.setdefault("presentation_semantic", _default_panel_presentation_semantic(panel))
+            _validate_dashboard_panel(screen, panel)
             panel.setdefault("status", "")
             panel.setdefault("note", "")
             panel.setdefault("layout_area", "")
+        if screen.get("dashboard_panels") and not any(
+            isinstance(panel, dict) and panel.get("user_priority") == "p0"
+            for panel in screen.get("dashboard_panels", [])
+        ):
+            raise TuiMetadataValidationError(f"Dashboard screen must expose a p0 panel: {screen['key']}")
 
     payload.setdefault("registry_key", "default")
     payload.setdefault("interaction_model", "published-metadata-to-pc-tools")
@@ -482,6 +533,10 @@ def compact_tui_metadata_payload(payload: dict[str, Any]) -> dict[str, Any]:
                     panel.pop(key, None)
             if panel.get("max_rows") == 8:
                 panel.pop("max_rows", None)
+            if panel.get("user_priority") == "p2":
+                panel.pop("user_priority", None)
+            if panel.get("presentation_semantic") == _default_panel_presentation_semantic(panel):
+                panel.pop("presentation_semantic", None)
 
     for action in compacted.get("actions", []):
         if not isinstance(action, dict):
@@ -494,6 +549,8 @@ def compact_tui_metadata_payload(payload: dict[str, Any]) -> dict[str, Any]:
             action.pop("fields", None)
         if action.get("view_model") == {}:
             action.pop("view_model", None)
+        if action.get("result_semantics") == []:
+            action.pop("result_semantics", None)
         if action.get("raw_debug") is True:
             action.pop("raw_debug", None)
         if action.get("description") == "":
@@ -581,6 +638,187 @@ def _validate_field(action: dict[str, Any], field: dict[str, Any]) -> None:
         raise TuiMetadataValidationError(f"Action field semantic must be a string: {action['key']}.{field_key}")
     if field.get("accept") is not None and not isinstance(field.get("accept"), str):
         raise TuiMetadataValidationError(f"Action file field accept must be a string: {action['key']}.{field_key}")
+    field.setdefault("presentation_semantic", _default_field_presentation_semantic(field_key))
+    presentation_semantic = str(field.get("presentation_semantic") or "")
+    if presentation_semantic not in ALLOWED_TUI_FIELD_PRESENTATION_SEMANTICS:
+        raise TuiMetadataValidationError(
+            f"Action field has unsupported presentation_semantic: {action['key']}.{field_key}.{presentation_semantic}"
+        )
+    if presentation_semantic == "prompt_text" and input_type != "textarea":
+        raise TuiMetadataValidationError(f"Prompt field must use textarea: {action['key']}.{field_key}")
+    if presentation_semantic == "endpoint_url" and input_type != "text":
+        raise TuiMetadataValidationError(f"Endpoint field must use text input: {action['key']}.{field_key}")
+    if presentation_semantic in {"api_token", "endpoint_url", "prompt_text"} and str(field.get("value_type") or "") != "string":
+        raise TuiMetadataValidationError(
+            f"Sensitive/copyable field must use string value_type: {action['key']}.{field_key}"
+        )
+
+
+def _default_screen_user_experience(screen: dict[str, Any]) -> dict[str, str]:
+    existing = dict(screen.get("user_experience") or {})
+    workflow = dict(screen.get("workflow") or {})
+    business_context = dict(screen.get("business_context") or {})
+    summary = str(screen.get("summary") or "").strip()
+    label = str(screen.get("label") or "").strip()
+    next_label = str(dict(workflow.get("next") or {}).get("label") or "").strip()
+    journey = str(existing.get("journey") or _default_screen_journey(screen))
+    return {
+        "journey": journey,
+        "primary_task": str(existing.get("primary_task") or summary or label).strip(),
+        "primary_outcome": str(
+            existing.get("primary_outcome") or business_context.get("decision_output") or summary or label
+        ).strip(),
+        "empty_state_hint": str(
+            existing.get("empty_state_hint")
+            or (
+                "先查看 P0 面板，再进入需要展开的任务。"
+                if journey == "dashboard"
+                else "先运行本屏主任务，必要时补充参数或切换到支撑检查。"
+            )
+        ).strip(),
+        "next_step_hint": str(
+            existing.get("next_step_hint")
+            or (
+                f"完成当前检查后进入「{next_label}」。"
+                if next_label
+                else "根据结果继续下一项主流程，或进入可执行操作。"
+            )
+        ).strip(),
+    }
+
+
+def _default_screen_journey(screen: dict[str, Any]) -> str:
+    key = str(screen.get("key") or "")
+    label = str(screen.get("label") or "")
+    if screen.get("dashboard_panels"):
+        return "dashboard"
+    if "self-service" in key or "接入" in label:
+        return "self_service"
+    if "admin" in key or "管理员" in label or "治理" in label:
+        return "admin"
+    return "workspace"
+
+
+def _validate_screen_user_experience(screen: dict[str, Any]) -> None:
+    user_experience = screen.get("user_experience")
+    if not isinstance(user_experience, dict):
+        raise TuiMetadataValidationError(f"Screen user_experience must be an object: {screen['key']}")
+    required_fields = ("journey", "primary_task", "primary_outcome", "empty_state_hint", "next_step_hint")
+    _require_fields(user_experience, "screen user_experience", required_fields)
+    journey = str(user_experience.get("journey") or "")
+    if journey not in ALLOWED_TUI_SCREEN_JOURNEYS:
+        raise TuiMetadataValidationError(
+            f"Screen user_experience has unsupported journey: {screen['key']}.{journey}"
+        )
+    if journey == "dashboard" and not screen.get("dashboard_panels"):
+        raise TuiMetadataValidationError(f"Dashboard journey screen must define dashboard_panels: {screen['key']}")
+
+
+def _default_panel_presentation_semantic(panel: dict[str, Any]) -> str:
+    key = str(panel.get("key") or "").lower()
+    title = str(panel.get("title") or "").lower()
+    kind = str(panel.get("kind") or "")
+    if kind == "datagrid":
+        return "supporting_list"
+    if "prompt" in key or "prompt" in title:
+        return "multiline_prompt"
+    if "endpoint" in key or "endpoint" in title:
+        return "endpoint_list"
+    if "status" in key or "状态" in title:
+        return "primary_status"
+    return "supporting_detail"
+
+
+def _validate_dashboard_panel(screen: dict[str, Any], panel: dict[str, Any]) -> None:
+    user_priority = str(panel.get("user_priority") or "")
+    if user_priority not in ALLOWED_TUI_PANEL_USER_PRIORITIES:
+        raise TuiMetadataValidationError(
+            f"Dashboard panel has unsupported user_priority: {screen['key']}.{panel['key']}"
+        )
+    presentation_semantic = str(panel.get("presentation_semantic") or "")
+    if presentation_semantic not in ALLOWED_TUI_PRESENTATION_SEMANTICS:
+        raise TuiMetadataValidationError(
+            f"Dashboard panel has unsupported presentation_semantic: {screen['key']}.{panel['key']}.{presentation_semantic}"
+        )
+    if presentation_semantic in {"copyable_secret", "endpoint_list", "multiline_prompt"}:
+        if str(panel.get("kind") or "") != "detail":
+            raise TuiMetadataValidationError(
+                f"Copyable/detail artifact panel must use detail kind: {screen['key']}.{panel['key']}"
+            )
+        if not str(panel.get("action_key") or "").strip():
+            raise TuiMetadataValidationError(
+                f"Copyable/detail artifact panel must bind an action: {screen['key']}.{panel['key']}"
+            )
+    if presentation_semantic == "primary_status" and str(panel.get("kind") or "") not in {"detail", "status", "regime_quadrant"}:
+        raise TuiMetadataValidationError(
+            f"Primary status panel must use detail/status/regime_quadrant kind: {screen['key']}.{panel['key']}"
+        )
+    if user_priority == "p0" and not (
+        str(panel.get("action_key") or "").strip() or str(panel.get("target_screen") or "").strip()
+    ):
+        raise TuiMetadataValidationError(f"P0 panel must point to a task or target screen: {screen['key']}.{panel['key']}")
+
+
+def _default_result_semantics(action: dict[str, Any]) -> list[str]:
+    action_key = str(action.get("key") or "").lower()
+    semantics: list[str] = []
+    if "token" in action_key or "secret" in action_key:
+        semantics.extend(["primary_status", "copyable_secret"])
+    elif "endpoint" in action_key:
+        semantics.append("endpoint_list")
+    elif "prompt" in action_key:
+        semantics.append("multiline_prompt")
+    elif "status" in action_key and str(action.get("view_type") or "") in {"detail", "status"}:
+        semantics.append("primary_status")
+    return semantics
+
+
+def _normalize_result_semantics(action: dict[str, Any]) -> list[str]:
+    value = action.get("result_semantics")
+    if value is None:
+        return _default_result_semantics(action)
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise TuiMetadataValidationError(f"Action result_semantics must be a string list: {action['key']}")
+    return value
+
+
+def _validate_result_semantics(action: dict[str, Any]) -> None:
+    view_type = str(action.get("view_type") or "")
+    view_model_kind = str((action.get("view_model") or {}).get("kind") or "")
+    for semantic in action.get("result_semantics") or []:
+        if semantic not in ALLOWED_TUI_PRESENTATION_SEMANTICS:
+            raise TuiMetadataValidationError(
+                f"Action result_semantics has unsupported value: {action['key']}.{semantic}"
+            )
+        if semantic in {"copyable_secret", "endpoint_list", "multiline_prompt"}:
+            if view_type != "detail" and view_model_kind not in {"", "detail"}:
+                raise TuiMetadataValidationError(f"Copyable/detail artifact action must use detail view: {action['key']}")
+        if semantic == "primary_status" and view_type not in {"detail", "status", "message"}:
+            raise TuiMetadataValidationError(
+                f"Primary status action must use detail/status/message view: {action['key']}"
+            )
+
+
+def _default_field_presentation_semantic(field_key: str) -> str:
+    normalized = field_key.lower()
+    if normalized in {"api_token", "access_token", "token_value", "display_token"} or any(
+        token in normalized for token in ("secret", "api_key")
+    ):
+        return "api_token"
+    if "endpoint" in normalized or normalized.endswith("_url") or normalized == "url":
+        return "endpoint_url"
+    if normalized.endswith("_id") or normalized in {"pk", "token_id"}:
+        return "primary_selector"
+    if normalized in {
+        "prompt",
+        "prompt_text",
+        "prompt_body",
+        "system_prompt",
+        "user_prompt",
+        "user_prompt_template",
+    } or normalized.endswith("_prompt"):
+        return "prompt_text"
+    return "identifier"
 
 
 def _validate_field_alias_registry(registry: Any) -> None:

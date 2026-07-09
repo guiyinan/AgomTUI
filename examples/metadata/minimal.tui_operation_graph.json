@@ -22,7 +22,8 @@
       "module_key": "overview",
       "group": "workbench",
       "summary": "Open the primary status view.",
-      "view_type": "status"
+      "view_type": "status",
+      "default_action_key": "overview.status"
     }
   ],
   "actions": [

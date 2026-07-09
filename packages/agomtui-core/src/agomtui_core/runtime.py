@@ -657,13 +657,16 @@ def _resolve_screen_patch(patch: Mapping[str, Any], action_keys: set[str]) -> di
     panels = patch.get("dashboard_panels")
     if not isinstance(panels, list):
         return resolved
-    resolved["dashboard_panels"] = [
+    resolved_panels = [
         panel
         for panel in panels
         if not isinstance(panel, Mapping)
         or str(panel.get("action_key") or "").strip() == ""
         or str(panel.get("action_key") or "").strip() in action_keys
     ]
+    if panels and not resolved_panels:
+        return {}
+    resolved["dashboard_panels"] = resolved_panels
     return resolved
 
 
