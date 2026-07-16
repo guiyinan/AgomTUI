@@ -12,6 +12,9 @@ This directory documents the repository's internal one-way sync boundary for run
 
 Only runtime shell reference assets may move through this mechanism:
 
+- `packages/agomtui-runtime/frontend/src/*.js`
+- `packages/agomtui-runtime/reference/agomtui-runtime.manifest.json`
+- `packages/agomtui-runtime/reference/static/js/agomtui-runtime-core.js`
 - `packages/agomtui-runtime/reference/tui_workbench.reference.html`
 - `packages/agomtui-runtime/reference/static/css/tui-workbench.css`
 - `packages/agomtui-runtime/reference/static/js/tui-workbench.js`
@@ -44,11 +47,15 @@ Use the sync script from the repository root.
 
 Recommended flow:
 
-1. run a dry check
-2. create a local config from the example if needed
-3. apply the sync
-4. compare against the configured baseline when reviewing larger updates
-5. list the resolved source configuration when debugging local setup
+1. build and test Runtime in AgomTradePro
+2. run a dry check
+3. create a local config from the example if needed
+4. apply the sync with `--apply`
+5. run `npm ci`, `npm run check:runtime`, and `npm run test:runtime-js`
+6. run the Python Runtime and demo-host tests
+7. compare against the configured baseline when reviewing larger updates
+
+The direction is permanently AgomTradePro → AgOMTUI. Do not edit synchronized source or bundles in AgOMTUI and copy them back upstream.
 
 ## Review Rule
 
@@ -57,4 +64,3 @@ Every sync is expected to be:
 1. run through the manifest
 2. reviewed as a normal diff
 3. followed by demo and test verification
-

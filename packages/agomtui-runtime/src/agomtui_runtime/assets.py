@@ -55,12 +55,19 @@ def render_runtime_html(
     )
     css_version = int((root / "static" / "css" / "tui-workbench.css").stat().st_mtime)
     js_version = int((root / "static" / "js" / "tui-workbench.js").stat().st_mtime)
+    core_js_version = int(
+        (root / "static" / "js" / "agomtui-runtime-core.js").stat().st_mtime
+    )
 
     source = source.replace('href="/tui/"', f'href="{html.escape(home_href, quote=True)}"')
     source = source.replace(">AgomTUI<", f">{html.escape(brand_label)}<")
     source = source.replace(
         "./static/css/tui-workbench.css",
         f"{normalized_asset_base}/css/tui-workbench.css?v={css_version}",
+    )
+    source = source.replace(
+        "./static/js/agomtui-runtime-core.js",
+        f"{normalized_asset_base}/js/agomtui-runtime-core.js?v={core_js_version}",
     )
     source = source.replace(
         '<script src="./static/js/tui-workbench.js"></script>',

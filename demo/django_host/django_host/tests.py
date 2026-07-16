@@ -33,6 +33,16 @@ class DjangoHostDemoTests(SimpleTestCase):
         self.assertEqual(payload["host"]["project"], "AgomTradePro Demo Host")
         self.assertEqual(payload["default_screen"], "command-center.overview")
 
+    def test_bootstrap_endpoint_returns_catalog_and_screen(self) -> None:
+        response = self.client.get("/api/tui/bootstrap/?screen_key=missing-screen")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["contract"], "tui-bootstrap.v1")
+        self.assertEqual(payload["requested_screen"], "missing-screen")
+        self.assertEqual(payload["resolved_screen"], "command-center.overview")
+        self.assertTrue(payload["restored"])
+        self.assertEqual(payload["screen"]["screen"]["key"], "command-center.overview")
+
     def test_host_runtime_action_executes(self) -> None:
         response = self.client.post(
             "/api/tui/actions/execution.tasks.ai-brief/run/",

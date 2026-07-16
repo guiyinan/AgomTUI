@@ -17,6 +17,10 @@ This package contains the browser runtime shell plus small host helpers for embe
 - renderer extension registration via `window.AgomTUIRenderers.register(name, rendererFn)` for host-owned renderers such as ECharts, CodeMirror, Mermaid, or Markdown
 - row-fill, inspector, pager, filter, modal, and raw-debug drawer behaviors
 - host-configurable API base via `window.__AGOMTUI_RUNTIME__.apiBase`
+- optional aggregate startup via `window.__AGOMTUI_RUNTIME__.bootstrapUrl`, with automatic legacy endpoint fallback
+- host extension hooks for dashboard panels, navigation badges, home actions, and host-screen detection
+- modular state, API, event, pagination, extension, and performance sources under `frontend/src/`
+- 120 ms filtering debounce, local pagination for datasets above 100 rows, and browser performance marks
 - host-configurable SVG data URL image rendering via `window.__AGOMTUI_RUNTIME__.allowSvgDataImages`; enabled by default
 - optional host slot HTML insertion via `window.__AGOMTUI_RUNTIME__.allowHostHtmlSlots`; disabled by default
 
@@ -73,4 +77,6 @@ The target is the **runtime framework**, not a full business application surface
 
 The reference shell in this package may be refreshed through the repository's internal one-way sync workflow.
 
-Only the reference HTML/CSS/JS assets under `packages/agomtui-runtime/reference/` should move through that sync path.
+AgomTradePro remains the only Runtime source owner. The allowlisted `frontend/src/` modules, generated reference assets, and version/hash manifest move from AgomTradePro into this package. Synchronized files are read-only downstream mirrors: fixes start upstream, then return through the sync command.
+
+Use `npm ci`, `npm run check:runtime`, and `npm run test:runtime-js` after every synchronization. The checked-in bundle lets Python package consumers run without Node.js.

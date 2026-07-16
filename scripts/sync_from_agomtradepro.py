@@ -259,6 +259,18 @@ def transform_django_template_to_reference_html(text: str) -> str:
     )
     text = replace_regex_once(
         text,
+        r"""<script src="\{% static 'js/agomtui-runtime-core\.js' %\}(?:\?[^\"]*)?"></script>""",
+        '<script src="./static/js/agomtui-runtime-core.js"></script>',
+        "reference runtime core path",
+    )
+    text = replace_regex_once(
+        text,
+        r"""\s*<script src="\{% static 'js/tui-agomtradepro-adapter\.js' %\}(?:\?[^\"]*)?"></script>""",
+        "",
+        "remove AgomTradePro host adapter",
+    )
+    text = replace_regex_once(
+        text,
         r"""<script src="\{% static 'js/tui-workbench\.js' %\}(?:\?[^"]*)?"></script>""",
         '<script src="./static/js/tui-workbench.js"></script>',
         "reference script path",

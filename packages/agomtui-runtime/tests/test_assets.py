@@ -21,6 +21,7 @@ class RuntimeAssetHelperTests(unittest.TestCase):
         self.assertIn('"apiBase": "/host-api/tui"', body)
         self.assertIn('"allowSvgDataImages": true', body)
         self.assertIn("/host/static/css/tui-workbench.css?v=", body)
+        self.assertIn("/host/static/js/agomtui-runtime-core.js?v=", body)
         self.assertIn("/host/static/js/tui-workbench.js?v=", body)
 
     def test_render_runtime_html_can_disable_svg_data_images(self) -> None:
@@ -70,8 +71,8 @@ class RuntimeAssetHelperTests(unittest.TestCase):
     def test_runtime_js_uses_favorite_copy_instead_of_pin_copy(self) -> None:
         asset = runtime_asset("js/tui-workbench.js").body.decode("utf-8")
 
-        self.assertIn("已收藏标记", asset)
-        self.assertNotIn("已置顶显示", asset)
+        self.assertIn("收藏工作区", asset)
+        self.assertNotIn("置顶工作区", asset)
 
     def test_runtime_js_suppresses_default_auto_run_before_catalog_drilldown(self) -> None:
         asset = runtime_asset("js/tui-workbench.js").body.decode("utf-8")

@@ -1,9 +1,13 @@
 (function () {
     "use strict";
 
+    const runtimeCore = window.AgomTUIRuntimeCore || {};
     const state = {
         catalog: null,
         screen: null,
+        screenBadges: {},
+        screenBadgeDrilldowns: {},
+        homePanelBadges: {},
         lastAction: null,
         lastParams: {},
         lastRaw: null,
@@ -26,6 +30,16 @@
         inspectorCollapsed: false,
         inspectorWidth: null,
         themeKey: "B",
+        pinnedScreenKeys: new Set(),
+        preferredHomeLane: "decision",
+        lastNonHomeScreen: "",
+        pendingRequestId: 0,
+        pendingController: null,
+        slowActionTimer: null,
+        clientPage: 1,
+        clientPageSize: 100,
+        operatorHomePayload: null,
+        operatorHomePromise: null,
     };
 
     const els = {
@@ -106,6 +120,10 @@
     const progressStorageKey = "agom-tui-primary-progress:v1";
     const themeStorageKey = "agom-tui-theme:v1";
     const inspectorWidthStorageKey = "agom-tui-inspector-width:v1";
+    const lastNonHomeScreenStorageKey = "agom-tui-last-non-home-screen:v1";
+    const pinnedScreensStorageKey = "agom-tui-pinned-screen-keys:v1";
+    const preferredHomeLaneStorageKey = "agom-tui-preferred-home-lane:v1";
+    const resumeOnBootStorageKey = "agom-tui-resume-on-boot:v1";
     const inspectorWidthMin = 220;
     const inspectorWidthMax = 640;
     const THEME_SEQUENCE = ["A", "B", "C"];
@@ -153,6 +171,12 @@
 
     const runtimeConfig = window.__AGOMTUI_RUNTIME__ || {};
     const apiBase = String(runtimeConfig.apiBase || "/api/tui").replace(/\/+$/, "");
+    const runtimeUrls = typeof runtimeCore.createRuntimeUrls === "function"
+        ? runtimeCore.createRuntimeUrls(runtimeConfig)
+        : null;
+    const runtimeHooks = typeof runtimeCore.runtimeHooks === "function"
+        ? runtimeCore.runtimeHooks(runtimeConfig)
+        : (runtimeConfig.hooks || {});
     const allowSvgDataImages = runtimeConfig.allowSvgDataImages !== false;
     const rendererRegistry = new Map();
     const builtInRendererNames = new Set([
@@ -237,15 +261,55 @@
     }
 
     function catalogUrl() {
-        return `${apiBase}/catalog/`;
+        return runtimeUrls ? runtimeUrls.catalog() : `${apiBase}/catalog/`;
     }
 
     function screenUrl(screenKey) {
-        return `${apiBase}/screens/${encodeURIComponent(screenKey)}/`;
+        return runtimeUrls ? runtimeUrls.screen(screenKey) : `${apiBase}/screens/${encodeURIComponent(screenKey)}/`;
     }
 
     function actionRunUrl(actionKey) {
-        return `${apiBase}/actions/${encodeURIComponent(actionKey)}/run/`;
+        return runtimeUrls ? runtimeUrls.action(actionKey) : `${apiBase}/actions/${encodeURIComponent(actionKey)}/run/`;
+    }
+
+    function bootstrapUrl(screenKey = "") {
+        return runtimeUrls ? runtimeUrls.bootstrap(screenKey) : "";
+    }
+
+    function operatorHomeUrl() {
+        return String(runtimeConfig.host?.operatorHomeUrl || "");
+    }
+
+    function governanceQueueUrl(domain = "") {
+        const baseUrl = String(runtimeConfig.host?.governanceQueueUrl || "");
+        if (!baseUrl) {
+            return "";
+        }
+        const suffix = domain ? `?domain=${encodeURIComponent(domain)}` : "";
+        return `${baseUrl}${suffix}`;
+    }
+
+    function isOperatorHomeScreen(screenKey) {
+        if (typeof runtimeHooks.isOperatorHomeScreen === "function") {
+            return Boolean(runtimeHooks.isOperatorHomeScreen(screenKey));
+        }
+        return false;
+    }
+
+    function isHomeClientAction(actionKey) {
+        return (runtimeConfig.host?.homeActionKeys || []).includes(String(actionKey || ""));
+    }
+
+    function operatorHomePanelSectionKey(panel) {
+        const actionKey = String(panel?.action_key || "").trim();
+        const prefix = String(runtimeConfig.host?.homePanelActionPrefix || "");
+        if (!prefix || !actionKey.startsWith(prefix)) {
+            return "";
+        }
+        if (isHomeClientAction(actionKey)) {
+            return "";
+        }
+        return actionKey.slice(prefix.length);
     }
 
     function escapeHtml(value) {
@@ -256,6 +320,124 @@
             '"': "&quot;",
             "'": "&#39;",
         }[char]));
+    }
+
+    function badgeCountsFromRows(rows) {
+        return (rows || []).reduce((counts, row) => {
+            const severity = String(row?.severity || "").trim().toLowerCase();
+            if (severity === "blocked") {
+                counts.blockedCount += 1;
+            } else if (severity === "warning") {
+                counts.warningCount += 1;
+            }
+            return counts;
+        }, { blockedCount: 0, warningCount: 0 });
+    }
+
+    function hasBadgeCounts(badge) {
+        return Number(badge?.blockedCount || 0) > 0 || Number(badge?.warningCount || 0) > 0;
+    }
+
+    function badgeMarkup(badge, options = {}) {
+        if (!hasBadgeCounts(badge)) {
+            return "";
+        }
+        const blockedCount = Number(badge?.blockedCount || 0);
+        const warningCount = Number(badge?.warningCount || 0);
+        const severity = blockedCount > 0 ? "blocked" : "warning";
+        const count = blockedCount > 0 ? blockedCount : warningCount;
+        const label = blockedCount > 0 ? "阻断" : "预警";
+        const extraClass = options.compact ? " tui-badge--compact" : "";
+        return `<span class="tui-badge tui-badge--${escapeHtml(severity)}${extraClass}" aria-label="${escapeHtml(label)} ${count}">${escapeHtml(count)}</span>`;
+    }
+
+    function badgeSeverityRank(severity) {
+        if (severity === "blocked") {
+            return 0;
+        }
+        if (severity === "warning") {
+            return 1;
+        }
+        return 2;
+    }
+
+    function badgeDrilldownsByScreen(items) {
+        return (items || []).reduce((next, item) => {
+            const severity = String(item?.severity || "").trim().toLowerCase();
+            const screenKey = String(item?.target_screen || "").trim();
+            const actionKey = String(item?.target_action_key || "").trim();
+            if (!["blocked", "warning"].includes(severity) || !screenKey || !actionKey) {
+                return next;
+            }
+            const candidate = {
+                screenKey,
+                actionKey,
+                severity,
+                title: String(item?.title || "").trim(),
+                nextAction: String(item?.next_action || "").trim(),
+            };
+            const existing = next[screenKey];
+            if (!existing || badgeSeverityRank(severity) < badgeSeverityRank(existing.severity)) {
+                next[screenKey] = candidate;
+            }
+            return next;
+        }, {});
+    }
+
+    function badgeDrilldownForScreen(screenKey) {
+        return state.screenBadgeDrilldowns[String(screenKey || "").trim()] || null;
+    }
+
+    function actionFormElement(action) {
+        if (!action) {
+            return null;
+        }
+        return els.actions.querySelector(
+            `[data-action-ui-key="${CSS.escape(actionUiKey(action))}"]`
+        );
+    }
+
+    function screenBadgeMarkup(screenKey) {
+        const badge = state.screenBadges[screenKey];
+        if (!hasBadgeCounts(badge)) {
+            return "";
+        }
+        const drilldown = badgeDrilldownForScreen(screenKey);
+        const badgeHtml = badgeMarkup(badge, { compact: true });
+        if (!drilldown?.actionKey) {
+            return badgeHtml;
+        }
+        const title = drilldown.title || drilldown.nextAction || "查看治理摘要";
+        return `
+            <button
+                class="tui-badge-button"
+                type="button"
+                data-badge-screen-key="${escapeHtml(screenKey)}"
+                title="${escapeHtml(title)}"
+                aria-label="${escapeHtml(title)}"
+            >${badgeHtml}</button>
+        `;
+    }
+
+    async function openScreenFromCatalog(screenKey) {
+        const normalizedKey = String(screenKey || "").trim();
+        if (!normalizedKey) {
+            return null;
+        }
+        const drilldown = badgeDrilldownForScreen(normalizedKey);
+        if (!drilldown?.actionKey) {
+            return loadScreen(normalizedKey);
+        }
+        const screenSpec = await loadScreen(normalizedKey, { suppressAutoAction: true });
+        if (!screenSpec) {
+            return screenSpec;
+        }
+        const action = currentAction(drilldown.actionKey);
+        if (!action) {
+            return screenSpec;
+        }
+        await runAction(action.key, actionFormElement(action));
+        return screenSpec;
     }
 
     function getCookie(name) {
@@ -484,6 +666,27 @@
         }
     }
 
+    function loadStoredOperatorState() {
+        state.lastNonHomeScreen = String(
+            window.localStorage?.getItem(lastNonHomeScreenStorageKey) || ""
+        ).trim();
+        const storedLane = String(
+            window.localStorage?.getItem(preferredHomeLaneStorageKey) || "decision"
+        ).trim();
+        state.preferredHomeLane = storedLane === "governance" ? "governance" : "decision";
+        try {
+            const rawPinned = window.localStorage?.getItem(pinnedScreensStorageKey);
+            const parsed = rawPinned ? JSON.parse(rawPinned) : [];
+            state.pinnedScreenKeys = new Set(
+                Array.isArray(parsed)
+                    ? parsed.map((value) => String(value || "").trim()).filter(Boolean)
+                    : []
+            );
+        } catch (_error) {
+            state.pinnedScreenKeys = new Set();
+        }
+    }
+
     function persistProgress() {
         try {
             const serializable = {};
@@ -495,6 +698,216 @@
             window.sessionStorage?.setItem(progressStorageKey, JSON.stringify(serializable));
         } catch (error) {
             // Session progress is a UI convenience; ignore storage failures.
+        }
+    }
+
+    function persistLastNonHomeScreen(screenKey) {
+        const normalizedKey = String(screenKey || "").trim();
+        state.lastNonHomeScreen = normalizedKey;
+        try {
+            if (normalizedKey) {
+                window.localStorage?.setItem(lastNonHomeScreenStorageKey, normalizedKey);
+            } else {
+                window.localStorage?.removeItem(lastNonHomeScreenStorageKey);
+            }
+        } catch (_error) {
+            return;
+        }
+    }
+
+    function persistPreferredHomeLane(lane) {
+        state.preferredHomeLane = lane === "governance" ? "governance" : "decision";
+        try {
+            window.localStorage?.setItem(preferredHomeLaneStorageKey, state.preferredHomeLane);
+        } catch (_error) {
+            return;
+        }
+    }
+
+    function persistPinnedScreens() {
+        try {
+            window.localStorage?.setItem(
+                pinnedScreensStorageKey,
+                JSON.stringify(Array.from(state.pinnedScreenKeys))
+            );
+        } catch (_error) {
+            return;
+        }
+    }
+
+    function shouldResumeOnBoot() {
+        try {
+            return window.sessionStorage?.getItem(resumeOnBootStorageKey) === "1";
+        } catch (_error) {
+            return false;
+        }
+    }
+
+    function clearResumeOnBootFlag() {
+        try {
+            window.sessionStorage?.removeItem(resumeOnBootStorageKey);
+        } catch (_error) {
+            return;
+        }
+    }
+
+    function markResumeOnBoot() {
+        try {
+            if (state.screen?.screen?.key && !isOperatorHomeScreen(state.screen.screen.key)) {
+                window.sessionStorage?.setItem(resumeOnBootStorageKey, "1");
+            } else {
+                window.sessionStorage?.removeItem(resumeOnBootStorageKey);
+            }
+        } catch (_error) {
+            return;
+        }
+    }
+
+    function openCliSurface() {
+        window.open("/terminal/", "_blank", "noopener,noreferrer");
+        setStatus("CLI 已在新标签页打开");
+    }
+
+    function restoreLastWorkspace() {
+        const target = String(state.lastNonHomeScreen || "").trim();
+        if (!target) {
+            setStatus("没有可恢复的最近工作区");
+            return false;
+        }
+        loadScreen(target);
+        return true;
+    }
+
+    function executeHomeAction(actionKey) {
+        const normalizedKey = String(actionKey || "").trim();
+        if (typeof runtimeHooks.runHomeAction === "function") {
+            return Boolean(runtimeHooks.runHomeAction(normalizedKey, {
+                loadScreen,
+                openCliSurface,
+                persistPreferredLane: persistPreferredHomeLane,
+                restoreLastWorkspace,
+            }));
+        }
+        return false;
+    }
+
+    function inferLaneFromScreen(screen) {
+        if (typeof runtimeHooks.inferHomeLane === "function") {
+            return String(runtimeHooks.inferHomeLane(screen) || "");
+        }
+        return "";
+    }
+
+    function badgeCountsByScreen(items) {
+        const next = {};
+        (items || []).forEach((item) => {
+            const severity = String(item?.severity || "").trim().toLowerCase();
+            if (!["blocked", "warning"].includes(severity)) {
+                return;
+            }
+            const screenKey = String(item?.target_screen || "").trim();
+            if (!screenKey) {
+                return;
+            }
+            if (!next[screenKey]) {
+                next[screenKey] = { blockedCount: 0, warningCount: 0 };
+            }
+            if (severity === "blocked") {
+                next[screenKey].blockedCount += 1;
+            } else {
+                next[screenKey].warningCount += 1;
+            }
+        });
+        return next;
+    }
+
+    function refreshVisibleHomePanelBadges() {
+        if (!isOperatorHomeScreen(state.screen?.screen?.key) || !els.main) {
+            return;
+        }
+        els.main.querySelectorAll("[data-dashboard-panel]").forEach((panelElement) => {
+            const panelKey = panelElement.dataset.dashboardPanel;
+            const badge = state.homePanelBadges[panelKey];
+            const badgeHost = panelElement.querySelector("[data-panel-badge]");
+            if (!badgeHost) {
+                return;
+            }
+            badgeHost.innerHTML = badgeMarkup(badge, { compact: true });
+        });
+    }
+
+    function applyNavigationBadges(navigationBadges) {
+        const counts = navigationBadges?.counts_by_screen || {};
+        state.screenBadges = Object.fromEntries(
+            Object.entries(counts).map(([screenKey, value]) => [
+                screenKey,
+                {
+                    blockedCount: Number(value?.blocked_count || 0),
+                    warningCount: Number(value?.warning_count || 0),
+                },
+            ]),
+        );
+        if (state.catalog) {
+            renderCatalog(state.catalog);
+        }
+        refreshVisibleHomePanelBadges();
+    }
+
+    async function loadOperatorHomeAggregate() {
+        if (state.operatorHomePayload) {
+            return state.operatorHomePayload;
+        }
+        if (!state.operatorHomePromise) {
+            const url = operatorHomeUrl();
+            if (!url) {
+                return null;
+            }
+            state.operatorHomePromise = fetchJson(url)
+                .then((payload) => {
+                    state.operatorHomePayload = payload;
+                    applyNavigationBadges(payload?.navigation_badges);
+                    return payload;
+                })
+                .finally(() => {
+                    state.operatorHomePromise = null;
+                });
+        }
+        return state.operatorHomePromise;
+    }
+
+    async function refreshGovernanceBadges() {
+        if (typeof runtimeHooks.loadNavigationBadges === "function") {
+            const navigationBadges = await runtimeHooks.loadNavigationBadges({
+                fetchJson,
+                screen: state.screen,
+            });
+            if (navigationBadges) {
+                applyNavigationBadges(navigationBadges);
+                return;
+            }
+        }
+        if (isOperatorHomeScreen(state.screen?.screen?.key)) {
+            await loadOperatorHomeAggregate();
+            return;
+        }
+        const queueUrl = governanceQueueUrl();
+        if (!queueUrl) {
+            return;
+        }
+        try {
+            const payload = await fetchJson(queueUrl);
+            state.screenBadges = badgeCountsByScreen(payload.items || []);
+            state.screenBadgeDrilldowns = badgeDrilldownsByScreen(payload.items || []);
+            if (state.catalog) {
+                renderCatalog(state.catalog);
+            }
+            refreshVisibleHomePanelBadges();
+        } catch (_error) {
+            state.screenBadges = {};
+            state.screenBadgeDrilldowns = {};
+            if (state.catalog) {
+                renderCatalog(state.catalog);
+            }
         }
     }
 
@@ -721,36 +1134,6 @@
         return form?.dataset?.actionUiKey || form?.dataset?.actionKey || "";
     }
 
-    function actionFormElement(action) {
-        if (!action) {
-            return null;
-        }
-        return els.actions.querySelector(
-            `[data-action-ui-key="${CSS.escape(actionUiKey(action))}"]`
-        );
-    }
-
-    async function openScreenFromCatalog(screenKey, actionKey = "") {
-        const normalizedKey = String(screenKey || "").trim();
-        if (!normalizedKey) {
-            return null;
-        }
-        const normalizedActionKey = String(actionKey || "").trim();
-        if (!normalizedActionKey) {
-            return loadScreen(normalizedKey);
-        }
-        const screenSpec = await loadScreen(normalizedKey, { suppressAutoAction: true });
-        if (!screenSpec || !normalizedActionKey) {
-            return screenSpec;
-        }
-        const action = currentAction(normalizedActionKey);
-        if (!action) {
-            return screenSpec;
-        }
-        await runAction(action.key, actionFormElement(action));
-        return screenSpec;
-    }
-
     function triggerActionForm(form) {
         const actionRef = actionRefFromForm(form);
         if (!actionRef) {
@@ -782,14 +1165,219 @@
             ...requestOptions,
             headers,
         });
-        if (!response.ok) {
-            throw new Error(`业务数据读取失败 (HTTP ${response.status})`);
-        }
         const contentType = response.headers.get("content-type") || "";
+        if (!response.ok) {
+            let errorPayload = null;
+            if (contentType.includes("application/json")) {
+                try {
+                    errorPayload = await response.json();
+                } catch (parseError) {
+                    errorPayload = null;
+                }
+            }
+            const error = new Error("业务请求未完成");
+            error.status = response.status;
+            error.payload = errorPayload;
+            throw error;
+        }
         if (!contentType.includes("application/json")) {
             throw new Error("业务数据格式不可渲染");
         }
         return response.json();
+    }
+
+    function boundedTuiError(error) {
+        const statusCode = Number(error?.status || 0);
+        const payload = error?.payload && typeof error.payload === "object" ? error.payload : {};
+        const isStructured = String(payload.error_code || "").startsWith("tui_");
+        const defaults = {
+            403: ["无权访问", "当前账号不能完成这项操作。"],
+            404: ["内容不存在", "目标内容没有发布，或已被移除。"],
+            502: ["服务暂时不可用", "服务暂时无法完成请求，请稍后重试。"],
+            503: ["服务正在恢复", "服务尚未就绪，请稍后重试。"],
+        };
+        const fallback = defaults[statusCode] || ["暂时无法完成请求", "请稍后重试，或返回可用工作区。"];
+        const recoveryActions = isStructured && Array.isArray(payload.recovery_actions)
+            ? payload.recovery_actions
+                .filter((item) => item && typeof item === "object" && item.screen_key)
+                .map((item) => ({
+                    label: String(item.label || "前往可用工作区"),
+                    screenKey: String(item.screen_key),
+                }))
+            : [];
+        return {
+            title: isStructured ? String(payload.title || fallback[0]) : fallback[0],
+            detail: isStructured ? String(payload.detail || fallback[1]) : fallback[1],
+            traceId: isStructured ? String(payload.trace_id || "") : "",
+            recoveryActions,
+        };
+    }
+
+    function renderDashboardPanelError(panel, error) {
+        const bounded = boundedTuiError(error);
+        return `
+            <div class="tui-panel-error" role="status">
+                <strong>${escapeHtml(bounded.title)}</strong>
+                <p>${escapeHtml(bounded.detail)}</p>
+                ${bounded.traceId ? `<small>追踪编号：${escapeHtml(bounded.traceId)}</small>` : ""}
+                <div class="tui-panel-error-actions">
+                    <button class="tui-panel-retry" type="button" data-panel-retry>重试</button>
+                    ${bounded.recoveryActions.map((item) => `
+                        <button
+                            class="tui-panel-recovery"
+                            type="button"
+                            data-panel-recovery-screen="${escapeHtml(item.screenKey)}"
+                        >${escapeHtml(item.label)}</button>
+                    `).join("")}
+                </div>
+                ${panel.note ? `<small>${escapeHtml(panel.note)}</small>` : ""}
+            </div>
+        `;
+    }
+
+    function bindDashboardPanelRecovery(root, panel) {
+        root.querySelector("[data-panel-retry]")?.addEventListener("click", () => loadDashboardPanel(panel));
+        root.querySelectorAll("[data-panel-recovery-screen]").forEach((button) => {
+            button.addEventListener("click", () => loadScreen(button.dataset.panelRecoveryScreen));
+        });
+    }
+
+    function renderBoundedApplicationError(error) {
+        const bounded = boundedTuiError(error);
+        els.mainTitle.textContent = bounded.title;
+        els.main.innerHTML = `
+            <section class="tui-application-error" role="alert">
+                <strong>${escapeHtml(bounded.title)}</strong>
+                <p>${escapeHtml(bounded.detail)}</p>
+                ${bounded.traceId ? `<small>追踪编号：${escapeHtml(bounded.traceId)}</small>` : ""}
+                <div class="tui-panel-error-actions">
+                    <button class="tui-panel-retry" type="button" data-application-retry>重试</button>
+                    ${bounded.recoveryActions.map((item) => `
+                        <button
+                            class="tui-panel-recovery"
+                            type="button"
+                            data-panel-recovery-screen="${escapeHtml(item.screenKey)}"
+                        >${escapeHtml(item.label)}</button>
+                    `).join("")}
+                </div>
+            </section>
+        `;
+        els.main.querySelector("[data-application-retry]")?.addEventListener("click", () => {
+            const screenKey = String(state.screen?.screen?.key || state.catalog?.default_screen || "home");
+            loadScreen(screenKey);
+        });
+        els.main.querySelectorAll("[data-panel-recovery-screen]").forEach((button) => {
+            button.addEventListener("click", () => loadScreen(button.dataset.panelRecoveryScreen));
+        });
+        setStatus("请求未完成");
+    }
+
+    function clearPendingRequest(options = {}) {
+        const { abort = false } = options;
+        if (state.slowActionTimer) {
+            window.clearTimeout(state.slowActionTimer);
+            state.slowActionTimer = null;
+        }
+        if (abort && state.pendingController) {
+            try {
+                state.pendingController.abort();
+            } catch (error) {
+                // Ignore abort races on already-settled requests.
+            }
+        }
+        state.pendingController = null;
+        state.pendingRequestId = 0;
+    }
+
+    function startPendingRequest(controller) {
+        clearPendingRequest();
+        state.pendingRequestId = Date.now();
+        state.pendingController = controller;
+        return state.pendingRequestId;
+    }
+
+    function renderActionLoadingState(action, screenSpec, options = {}) {
+        const waitingCopy = options.waitingCopy || "正在读取业务数据...";
+        els.main.innerHTML = `
+            <section class="tui-entry-state">
+                <div class="tui-view-status">加载中 / ${escapeHtml(action.label || "默认任务")}</div>
+                <div class="tui-entry-copy">
+                    <strong>${escapeHtml(waitingCopy)}</strong>
+                    <p>${escapeHtml(screenSpec?.screen?.summary || "系统正在准备默认结果。")}</p>
+                </div>
+            </section>
+        `;
+        setStatus("读取数据");
+    }
+
+    function scheduleSlowActionState(requestId, action) {
+        const slowTargets = new Set(runtimeConfig.host?.slowActionKeys || []);
+        if (!slowTargets.has(action.key)) {
+            return;
+        }
+        state.slowActionTimer = window.setTimeout(() => {
+            if (state.pendingRequestId !== requestId) {
+                return;
+            }
+            renderSlowActionState(action);
+        }, 15000);
+    }
+
+    function renderSlowActionState(action) {
+        const hostedAlternatives = (runtimeConfig.host?.slowActionScreens || [])
+            .filter((item) => item?.key && item?.label)
+            .map((item) => `<button type="button" data-slow-screen="${escapeHtml(item.key)}">${escapeHtml(item.label)}</button>`)
+            .join("");
+        els.main.innerHTML = `
+            <section class="tui-entry-state">
+                <div class="tui-view-status">响应较慢 / ${escapeHtml(action.label || "")}</div>
+                <div class="tui-entry-copy">
+                    <strong>当前响应较慢，可继续等待、重试或取消。</strong>
+                    <p>当前请求仍在执行中，也可以切换到宿主提供的其他入口。</p>
+                </div>
+                <div class="tui-entry-actions">
+                    <button type="button" data-slow-command="wait">继续等待</button>
+                    <button type="button" data-slow-command="retry">重试</button>
+                    ${hostedAlternatives}
+                    <button type="button" data-slow-command="cancel">取消本次请求</button>
+                </div>
+            </section>
+        `;
+        els.main.querySelectorAll("[data-slow-command]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const command = button.dataset.slowCommand;
+                if (command === "wait") {
+                    renderActionLoadingState(action, state.screen, { waitingCopy: "继续等待远端响应..." });
+                    scheduleSlowActionState(state.pendingRequestId, action);
+                } else if (command === "retry") {
+                    clearPendingRequest({ abort: true });
+                    runAction(action.key, null, { params: { ...state.lastParams } });
+                } else if (command === "cancel") {
+                    clearPendingRequest({ abort: true });
+                    els.main.innerHTML = renderEmptyState("已取消当前请求。", ["你可以重试，或切换到其他入口继续。"]);
+                    setStatus("已取消");
+                }
+            });
+        });
+        els.main.querySelectorAll("[data-slow-screen]").forEach((button) => {
+            button.addEventListener("click", () => {
+                clearPendingRequest({ abort: true });
+                loadScreen(button.dataset.slowScreen);
+            });
+        });
+        setStatus("响应较慢");
+    }
+
+    function focusActionForm(actionKey) {
+        const action = currentAction(actionKey);
+        if (!action) {
+            setStatus("默认任务未找到");
+            return;
+        }
+        const form = els.actions.querySelector(`[data-action-ui-key="${CSS.escape(actionUiKey(action))}"]`);
+        form?.scrollIntoView({ block: "nearest" });
+        form?.querySelector("input:not([type='hidden']),select,textarea,button")?.focus();
+        setStatus(`已定位到 ${action.label}`);
     }
 
     function renderCatalog(catalog) {
@@ -801,25 +1389,70 @@
                 <div class="tui-group-title">${escapeHtml(group.label)}</div>
                 ${(group.modules || []).map((module) => `
                     <div class="tui-tree-module">
-                        <div class="tui-tree-module-title">${escapeHtml(module.label)}
-                            <span>${escapeHtml(module.action_count || 0)}</span>
+                        <div class="tui-tree-module-title">
+                            <span>${escapeHtml(module.label)}</span>
+                            <div class="tui-tree-module-meta">
+                                ${badgeMarkup((module.screens || []).reduce((counts, screen) => {
+                                    const badge = state.screenBadges[screen.key] || {};
+                                    counts.blockedCount += Number(badge.blockedCount || 0);
+                                    counts.warningCount += Number(badge.warningCount || 0);
+                                    return counts;
+                                }, { blockedCount: 0, warningCount: 0 }), { compact: true })}
+                                <small>${escapeHtml(module.action_count || 0)}</small>
+                            </div>
                         </div>
                         ${(module.screens || []).map((screen) => `
-                            <button class="tui-screen-button" type="button" data-screen-key="${escapeHtml(screen.key)}" data-screen-action-key="${escapeHtml(screen.default_action_key || "")}">
-                                <span>${++screenIndex} ${escapeHtml(screen.label)}</span>
-                                <small>${escapeHtml(viewLabel(screen.view_type))} / ${escapeHtml(screen.action_count)} 项</small>
-                            </button>
+                            <div class="tui-screen-row">
+                                <button class="tui-screen-button" type="button" data-screen-key="${escapeHtml(screen.key)}">
+                                    <span>${++screenIndex} ${escapeHtml(screen.label)}</span>
+                                    <small>${escapeHtml(viewLabel(screen.view_type))} / ${escapeHtml(screen.action_count)} 项</small>
+                                </button>
+                                <div class="tui-screen-tools">
+                                    ${screenBadgeMarkup(screen.key)}
+                                    <button
+                                        class="tui-screen-pin${state.pinnedScreenKeys.has(screen.key) ? " is-active" : ""}"
+                                        type="button"
+                                        data-pin-screen-key="${escapeHtml(screen.key)}"
+                                        aria-label="${escapeHtml(state.pinnedScreenKeys.has(screen.key) ? "取消收藏工作区" : "收藏工作区")}"
+                                        title="${escapeHtml(state.pinnedScreenKeys.has(screen.key) ? "取消收藏工作区" : "收藏工作区")}"
+                                    >${state.pinnedScreenKeys.has(screen.key) ? "★" : "☆"}</button>
+                                </div>
+                            </div>
                         `).join("")}
                     </div>
                 `).join("")}
             </section>
         `).join("");
         els.moduleTree.querySelectorAll("[data-screen-key]").forEach((button) => {
-            button.addEventListener("click", () => openScreenFromCatalog(
-                button.dataset.screenKey,
-                button.dataset.screenActionKey
-            ));
+            button.addEventListener("click", () => loadScreen(button.dataset.screenKey));
         });
+        els.moduleTree.querySelectorAll("[data-badge-screen-key]").forEach((button) => {
+            button.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openScreenFromCatalog(button.dataset.badgeScreenKey);
+            });
+        });
+        els.moduleTree.querySelectorAll("[data-pin-screen-key]").forEach((button) => {
+            button.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const screenKey = String(button.dataset.pinScreenKey || "").trim();
+                if (!screenKey) {
+                    return;
+                }
+                if (state.pinnedScreenKeys.has(screenKey)) {
+                    state.pinnedScreenKeys.delete(screenKey);
+                } else {
+                    state.pinnedScreenKeys.add(screenKey);
+                }
+                persistPinnedScreens();
+                renderCatalog(state.catalog);
+            });
+        });
+        if (state.screen?.screen?.key) {
+            markActiveScreen(state.screen.screen.key);
+        }
     }
 
     function markActiveScreen(screenKey) {
@@ -832,15 +1465,13 @@
         const id = `tui-${action.key}-${field.key}`;
         const value = field.default || "";
         const required = field.required ? "required" : "";
-        const semanticClass = fieldPresentationClass(field);
-        const fieldClass = semanticClass ? `tui-field ${semanticClass}` : "tui-field";
         if (field.input_type === "hidden") {
             return `<input id="${escapeHtml(id)}" name="${escapeHtml(field.key)}" type="hidden" value="${escapeHtml(value)}">`;
         }
         if (field.input_type === "select") {
             const options = field.options || [];
             return `
-                <label class="${escapeHtml(fieldClass)}" for="${escapeHtml(id)}">
+                <label class="tui-field" for="${escapeHtml(id)}">
                     <span>${escapeHtml(field.label)}</span>
                     <select id="${escapeHtml(id)}" name="${escapeHtml(field.key)}" ${required}>
                         ${options.map((option) => {
@@ -863,9 +1494,9 @@
         }
         if (field.input_type === "textarea") {
             return `
-                <label class="${escapeHtml(fieldClass)}" for="${escapeHtml(id)}">
+                <label class="tui-field" for="${escapeHtml(id)}">
                     <span>${escapeHtml(field.label)}</span>
-                    <textarea id="${escapeHtml(id)}" name="${escapeHtml(field.key)}" rows="${field.presentation_semantic === "prompt_text" ? "8" : "3"}" ${required} placeholder="${escapeHtml(field.placeholder || "")}">${escapeHtml(value)}</textarea>
+                    <textarea id="${escapeHtml(id)}" name="${escapeHtml(field.key)}" rows="3" ${required} placeholder="${escapeHtml(field.placeholder || "")}">${escapeHtml(value)}</textarea>
                 </label>
             `;
         }
@@ -878,16 +1509,11 @@
             `;
         }
         return `
-            <label class="${escapeHtml(fieldClass)}" for="${escapeHtml(id)}">
+            <label class="tui-field" for="${escapeHtml(id)}">
                 <span>${escapeHtml(field.label)}</span>
                 <input id="${escapeHtml(id)}" name="${escapeHtml(field.key)}" type="${escapeHtml(field.input_type || "text")}" value="${escapeHtml(value)}" ${required} placeholder="${escapeHtml(field.placeholder || "")}">
             </label>
         `;
-    }
-
-    function fieldPresentationClass(field) {
-        const semantic = String(field?.presentation_semantic || "").trim();
-        return semantic ? `tui-field-${semantic.replace(/[^a-z0-9_-]+/gi, "-")}` : "";
     }
 
     function coerceFieldValue(field, value, checked) {
@@ -961,15 +1587,24 @@
         state.screen = screenSpec;
         state.lastRaw = null;
         state.lastPager = null;
+        state.homePanelBadges = {};
         resetGridState();
         const screen = screenSpec.screen;
+        const inferredLane = inferLaneFromScreen(screen);
+        if (inferredLane) {
+            persistPreferredHomeLane(inferredLane);
+        }
+        if (!isOperatorHomeScreen(screen.key)) {
+            persistLastNonHomeScreen(screen.key);
+        }
+        markResumeOnBoot();
         els.screenTitle.textContent = screen.label.toUpperCase();
         els.screenStatus.textContent = screen.status.toUpperCase();
         els.mainTitle.textContent = screen.label.toUpperCase();
         setCurrentLocation(null);
         markActiveScreen(screen.key);
         renderWorkflowStrip(screen.workflow || {});
-        const dashboardScreen = hasDashboardPanels(screen);
+        const dashboardScreen = hasDashboardPanels(screen) && (screen.entry_state?.mode !== "parameter_gate");
         const immersiveDashboard = isImmersiveDashboardScreen(screen);
         els.actions.closest(".tui-panel").hidden = immersiveDashboard;
         els.inspector.closest(".tui-panel").hidden = immersiveDashboard;
@@ -992,15 +1627,15 @@
         renderActions(screenSpec.actions || [], screen);
         const actionSummary = summarizeActions(screenSpec.actions || []);
         const businessContext = screen.business_context || {};
-        const userExperience = screenUserExperience(screen);
+        const experience = screenUserExperience(screen);
         renderInspector({
             title: screen.label,
-            body: userExperience.primary_task || screen.summary,
+            body: screenPrimaryBody(screen),
             rows: [
+                ["主任务", experience.primaryTask],
+                ["目标结果", experience.primaryOutcome],
                 ["工作区", screenSpec.module.label],
                 ["视图", viewLabel(screen.view_type)],
-                ["主任务", userExperience.primary_task || screen.summary || "-"],
-                ["目标产出", userExperience.primary_outcome || businessContext.decision_output || "-"],
                 ["主流程", actionSummary.primary],
                 ["支撑检查", actionSummary.support],
                 ["高级查询", actionSummary.advanced],
@@ -1009,35 +1644,32 @@
                 ["AI 交互", actionSummary.ai],
             ],
             sections: [
+                ...userExperienceSections(screen),
                 ...businessContextSections(businessContext),
                 {
                     title: "操作提示",
                     body: [
-                        userExperience.empty_state_hint,
                         actionSummary.operation
-                            ? "本工作区包含提交或 AI 协助动作，已收藏标记；提交前会按策略要求确认。"
+                            ? "本工作区包含提交或 AI 协助动作，已置顶显示；提交前会按策略要求确认。"
                             : "本工作区当前提供打开、查询和检查任务；结果按业务视图呈现，不展示内部接口。"
                     ],
-                    rows: [["下一步", userExperience.next_step_hint || "按主流程继续。"]],
+                    rows: [],
                 },
             ],
         });
         updatePager(null);
         updateRawDrawer();
+        const entryState = screen.entry_state || {};
         const defaultAction = resolveDefaultAction(screenSpec);
-        if (defaultAction && !options.suppressAutoAction) {
+        if (entryState.mode === "parameter_gate" && defaultAction) {
+            renderEntryState(screenSpec, defaultAction, entryState);
+            setStatus("等待选择");
+        } else if (defaultAction && !options.suppressAutoAction) {
             const defaultForm = els.actions.querySelector(`[data-action-ui-key="${CSS.escape(actionUiKey(defaultAction))}"]`);
-            els.main.innerHTML = '<div class="tui-loading">加载默认视图...</div>';
-            setStatus("加载默认视图");
+            renderActionLoadingState(defaultAction, screenSpec, { waitingCopy: entryState.empty_copy });
             runAction(defaultAction.key, defaultForm);
         } else {
-            els.main.innerHTML = renderEmptyState(
-                userExperience.primary_task || screen.summary || "当前工作区暂无默认视图。",
-                [
-                    userExperience.empty_state_hint || "请选择左侧任务或按 F6 执行下一主流程。",
-                    userExperience.next_step_hint || "完成当前检查后继续下一步。",
-                ].filter(Boolean),
-            );
+            els.main.innerHTML = `<div class="tui-empty-state">${escapeHtml(entryState.empty_copy || screenEmptyStateHint(screen, screen.summary))}<br>请选择左侧任务或按 F6 执行下一主流程。</div>`;
             setStatus("工作区就绪");
         }
     }
@@ -1048,41 +1680,153 @@
             return null;
         }
         const screen = screenSpec.screen || {};
+        const entryState = screen.entry_state || {};
+        if (entryState.mode === "dashboard") {
+            return null;
+        }
         const preferred = actions.find((action) => action.key === screen.default_action_key);
         const candidate = preferred || actions[0];
-        const requiredFields = (candidate.fields || []).filter((field) => field.required && !field.default);
+        if (!candidate) {
+            return null;
+        }
+        if (entryState.mode === "parameter_gate") {
+            return candidate;
+        }
+        const requiredFields = unresolvedRequiredFields(candidate);
         if (requiredFields.length) {
             return null;
         }
         return candidate;
     }
 
-    function hasDashboardPanels(screen) {
-        return Array.isArray(screen?.dashboard_panels) && screen.dashboard_panels.length > 0;
+    function unresolvedRequiredFields(action) {
+        return (action?.fields || [])
+            .filter((field) => field.required && field.input_type !== "hidden")
+            .filter((field) => field.default === undefined || field.default === null || field.default === "");
+    }
+
+    function renderEntryState(screenSpec, action, entryState) {
+        const fieldKey = String(entryState.field_key || "");
+        const field = (action.fields || []).find((item) => item.key === fieldKey) || unresolvedRequiredFields(action)[0];
+        if (!field) {
+            els.main.innerHTML = renderEmptyState(
+                entryState.empty_copy || screenEmptyStateHint(screenSpec.screen, screenSpec.screen.summary),
+                entryState.help_steps || ["请选择左侧任务继续。"],
+            );
+            return;
+        }
+        const inputType = String(field.input_type || "").toLowerCase();
+        if (inputType === "select" && Array.isArray(field.options) && field.options.length) {
+            renderSelectorEntryState(screenSpec, action, entryState, field);
+            return;
+        }
+        renderTaskStartEntryState(screenSpec, action, entryState, field);
+    }
+
+    function renderSelectorEntryState(screenSpec, action, entryState, field) {
+        const options = (field.options || []).filter((option) => {
+            if (option && typeof option === "object") {
+                return String(option.value ?? "").trim() !== "";
+            }
+            return String(option ?? "").trim() !== "";
+        });
+        const cards = options.map((option, index) => {
+            const optionValue = typeof option === "object" ? option.value : option;
+            const optionLabel = typeof option === "object" ? option.label : option;
+            const optionSummary = typeof option === "object"
+                ? [option.account_name, option.account_type, option.summary].filter(Boolean).join(" / ")
+                : "";
+            return `
+                <button type="button" class="tui-entry-card" data-entry-option-index="${index}" data-entry-option-value="${escapeHtml(optionValue)}">
+                    <strong>${escapeHtml(optionLabel)}</strong>
+                    <span>${escapeHtml(optionSummary || "选择后自动进入默认结果。")}</span>
+                    <small>${escapeHtml(action.label)}</small>
+                </button>
+            `;
+        }).join("");
+        els.main.innerHTML = `
+            <section class="tui-entry-state">
+                <div class="tui-view-status">入口选择 / ${escapeHtml(screenSpec.screen.label)}</div>
+                <div class="tui-entry-copy">
+                    <strong>${escapeHtml(entryState.empty_copy || screenEmptyStateHint(screenSpec.screen, `先选择${field.label}`))}</strong>
+                    ${(entryState.help_steps || []).map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
+                </div>
+                <div class="tui-entry-grid">${cards}</div>
+            </section>
+        `;
+        els.main.querySelectorAll("[data-entry-option-index]").forEach((button, index) => {
+            button.addEventListener("click", () => {
+                const option = options[index];
+                const value = typeof option === "object" ? option.value : option;
+                runAction(action.key, null, { params: { [field.key]: value } });
+            });
+        });
+    }
+
+    function renderTaskStartEntryState(screenSpec, action, entryState, field) {
+        els.main.innerHTML = `
+            <section class="tui-entry-state">
+                <div class="tui-view-status">任务起步 / ${escapeHtml(screenSpec.screen.label)}</div>
+                <div class="tui-entry-copy">
+                    <strong>${escapeHtml(entryState.empty_copy || screenEmptyStateHint(screenSpec.screen, `先补充${field.label}`))}</strong>
+                    ${(entryState.help_steps || []).map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
+                </div>
+                <div class="tui-entry-actions">
+                    <button type="button" data-focus-default-action>打开默认任务</button>
+                </div>
+            </section>
+        `;
+        els.main.querySelector("[data-focus-default-action]")?.addEventListener("click", () => {
+            focusActionForm(action.key);
+        });
     }
 
     function screenUserExperience(screen) {
-        return screen?.user_experience || {};
+        const experience = screen && typeof screen.user_experience === "object"
+            ? screen.user_experience
+            : {};
+        return {
+            journey: String(experience.journey || "").trim(),
+            primaryTask: operatorText(experience.primary_task || screen?.summary || screen?.label || ""),
+            primaryOutcome: operatorText(experience.primary_outcome || screen?.summary || screen?.label || ""),
+            emptyStateHint: operatorText(
+                experience.empty_state_hint || screen?.summary || "先运行本屏主任务，必要时补充参数。"
+            ),
+            nextStepHint: operatorText(
+                experience.next_step_hint || "根据结果继续下一项主流程，或进入可执行操作。"
+            ),
+        };
     }
 
-    function userPriorityRank(priority) {
-        const ranks = { p0: 0, p1: 1, p2: 2 };
-        return ranks[String(priority || "").toLowerCase()] ?? 9;
+    function screenPrimaryBody(screen) {
+        const experience = screenUserExperience(screen);
+        return uniqueNonEmpty([
+            experience.primaryTask,
+            experience.primaryOutcome !== experience.primaryTask ? experience.primaryOutcome : "",
+        ]).join("\n");
     }
 
-    function orderedDashboardPanels(screen, actions) {
-        const configuredPanels = screen.dashboard_panels && screen.dashboard_panels.length
-            ? screen.dashboard_panels
-            : defaultDashboardPanels(actions || []);
-        return configuredPanels
-            .map((panel, index) => ({ ...panel, __tui_order: index }))
-            .sort((left, right) => userPriorityRank(left.user_priority) - userPriorityRank(right.user_priority)
-                || Number(left.__tui_order) - Number(right.__tui_order))
-            .map((panel) => {
-                const next = { ...panel };
-                delete next.__tui_order;
-                return next;
-            });
+    function screenEmptyStateHint(screen, fallback = "") {
+        const experience = screenUserExperience(screen);
+        return experience.emptyStateHint || operatorText(fallback || screen?.summary || "先运行本屏主任务。");
+    }
+
+    function userExperienceSections(screen) {
+        const experience = screenUserExperience(screen);
+        const rows = [
+            ["主任务", experience.primaryTask],
+            ["目标结果", experience.primaryOutcome],
+        ];
+        const body = uniqueNonEmpty([experience.emptyStateHint, experience.nextStepHint]);
+        return [{
+            title: "用户任务",
+            rows,
+            body,
+        }];
+    }
+
+    function hasDashboardPanels(screen) {
+        return Array.isArray(screen?.dashboard_panels) && screen.dashboard_panels.length > 0;
     }
 
     function isImmersiveDashboardScreen(screen) {
@@ -1114,6 +1858,11 @@
         if (!els.workflowStrip) {
             return;
         }
+        if (isOperatorHomeScreen(state.screen?.screen?.key)) {
+            els.workflowStrip.hidden = true;
+            els.workflowStrip.innerHTML = "";
+            return;
+        }
         const wf = workflow || {};
         if (!wf.name) {
             els.workflowStrip.hidden = true;
@@ -1122,6 +1871,28 @@
         }
         const previous = wf.previous || {};
         const next = wf.next || {};
+        const workflowActionKeys = runtimeConfig.host?.workflowActionKeys || [];
+        const workflowActions = (
+            typeof runtimeHooks.getHomeActions === "function"
+                ? runtimeHooks.getHomeActions({
+                    lastWorkspace: state.lastNonHomeScreen,
+                    preferredLane: state.preferredHomeLane,
+                })
+                : []
+        ).filter((action) => workflowActionKeys.includes(action.key));
+        const workflowActionsLane = String(runtimeConfig.host?.workflowActionsLane || "");
+        const showWorkflowActions = workflowActions.length
+            && workflowActionsLane
+            && inferLaneFromScreen({ workflow: wf }) === workflowActionsLane;
+        const workflowTools = showWorkflowActions
+            ? `
+                <div class="tui-workflow-tools">
+                    ${workflowActions.map((action) => `
+                        <button type="button" data-home-action-key="${escapeHtml(action.key)}">${escapeHtml(action.label)}</button>
+                    `).join("")}
+                </div>
+            `
+            : "";
         els.workflowStrip.hidden = false;
         els.workflowStrip.innerHTML = `
             <div class="tui-workflow-main">
@@ -1134,76 +1905,189 @@
                 ${previous.key ? `<button type="button" data-workflow-target="${escapeHtml(previous.key)}">&lt; ${escapeHtml(previous.label)}</button>` : "<span>起点</span>"}
                 ${next.key ? `<button type="button" data-workflow-target="${escapeHtml(next.key)}">${escapeHtml(next.label)} &gt;</button>` : "<span>终点</span>"}
             </div>
+            ${workflowTools}
         `;
         els.workflowStrip.querySelectorAll("[data-workflow-target]").forEach((button) => {
             button.addEventListener("click", () => loadScreen(button.dataset.workflowTarget));
         });
+        els.workflowStrip.querySelectorAll("[data-home-action-key]").forEach((button) => {
+            button.addEventListener("click", () => executeHomeAction(button.dataset.homeActionKey));
+        });
+    }
+
+    function renderHomeActionStrip() {
+        const actions = typeof runtimeHooks.getHomeActions === "function"
+            ? runtimeHooks.getHomeActions({
+                lastWorkspace: state.lastNonHomeScreen,
+                preferredLane: state.preferredHomeLane,
+            })
+            : [];
+        if (!Array.isArray(actions) || !actions.length) {
+            return "";
+        }
+        return `
+            <section class="tui-home-actions" aria-label="统一首页主动作">
+                ${actions.map((action) => `
+                    <button type="button" class="tui-home-action${action.active ? " is-active" : ""}" data-home-action-key="${escapeHtml(action.key)}">
+                        <strong>${escapeHtml(action.label)}</strong>
+                        <span>${escapeHtml(action.description || "")}</span>
+                    </button>
+                `).join("")}
+            </section>
+        `;
     }
 
     function renderDashboardHome(screenSpec) {
         const screen = screenSpec.screen;
-        const panels = orderedDashboardPanels(screen, screenSpec.actions || []);
+        const panels = screen.dashboard_panels && screen.dashboard_panels.length
+            ? screen.dashboard_panels
+            : defaultDashboardPanels(screenSpec.actions || []);
         const immersiveDashboard = isImmersiveDashboardScreen(screen);
         const actionSummary = summarizeActions(screenSpec.actions || []);
         const businessContext = screen.business_context || {};
-        const userExperience = screenUserExperience(screen);
-        const layout = dashboardLayout(panels);
+        const experience = screenUserExperience(screen);
+        const layout = dashboardLayout(panels, screen);
         setWorkspaceViewKind("dashboard");
         els.mainTitle.textContent = immersiveDashboard ? "系统首页" : `${screen.label} 概览`;
         els.main.innerHTML = `
+            ${isOperatorHomeScreen(screen.key) ? renderHomeActionStrip() : ""}
             <div class="tui-dashboard-grid" style="${escapeHtml(layout.gridStyle)}">
                 ${panels.map((panel, index) => `
-                    <section class="tui-dash-panel" style="grid-area: ${escapeHtml(layout.areas[index])};" data-dashboard-panel="${escapeHtml(panel.key)}" data-dashboard-target="${escapeHtml(dashboardTargetScreen(panel))}" tabindex="0" role="button">
-                        <h3>${escapeHtml(panel.title)}</h3>
-                        <div class="tui-loading">读取业务数据...</div>
-                    </section>
+                    <article class="tui-dash-panel" style="grid-area: ${escapeHtml(layout.areas[index])};" data-dashboard-panel="${escapeHtml(panel.key)}" data-panel-priority="${escapeHtml(panelPriority(panel))}" data-panel-semantic="${escapeHtml(panelPresentationSemantic(panel))}">
+                        ${renderDashboardPanelShell(panel, '<div class="tui-loading">读取业务数据...</div>')}
+                    </article>
                 `).join("")}
             </div>
         `;
         renderInspector({
             title: screen.label,
-            body: userExperience.primary_task || screen.summary,
+            body: screenPrimaryBody(screen),
             rows: [
+                ["主任务", experience.primaryTask],
+                ["目标结果", experience.primaryOutcome],
                 ["工作区", screenSpec.module.label],
                 ["布局", immersiveDashboard ? "系统首页总控台" : "业务概览面板"],
-                ["主任务", userExperience.primary_task || screen.summary || "-"],
-                ["目标产出", userExperience.primary_outcome || businessContext.decision_output || "-"],
                 ["主流程", actionSummary.primary],
                 ["支撑检查", actionSummary.support],
                 ["任务", screen.action_count],
             ],
             sections: [
+                ...userExperienceSections(screen),
                 ...businessContextSections(businessContext),
                 {
                     title: "操作提示",
                     body: [
-                        userExperience.empty_state_hint,
                         immersiveDashboard
                             ? "总览面板来自已审核 action；点击面板可进入对应业务屏继续处理。"
                             : "概览面板用于先看全局摘要；左侧任务区可以继续打开明细或执行补充查询。",
                     ],
-                    rows: [["下一步", userExperience.next_step_hint || "按优先级处理 P0 面板。"]],
+                    rows: [],
                 },
             ],
         });
-        els.main.querySelectorAll("[data-dashboard-target]").forEach((panelElement) => {
-            const target = panelElement.dataset.dashboardTarget;
-            if (!target) {
-                return;
-            }
-            panelElement.addEventListener("click", () => loadScreen(target));
-            panelElement.addEventListener("keydown", (event) => {
-                if (event.key === "Enter") {
-                    event.preventDefault();
-                    loadScreen(target);
-                }
-            });
+        bindDashboardPanelOpenControls(els.main);
+        els.main.querySelectorAll("[data-home-action-key]").forEach((button) => {
+            button.addEventListener("click", () => executeHomeAction(button.dataset.homeActionKey));
         });
-        panels.forEach((panel) => loadDashboardPanel(panel));
+        const primaryPanels = panels.filter((panel) => panelPriority(panel) === "p0");
+        const deferredPanels = panels.filter((panel) => panelPriority(panel) !== "p0");
+        primaryPanels.forEach((panel) => loadDashboardPanel(panel));
+        const loadDeferredPanels = () => deferredPanels.forEach((panel) => loadDashboardPanel(panel));
+        if (typeof window.requestIdleCallback === "function") {
+            window.requestIdleCallback(loadDeferredPanels, { timeout: 250 });
+        } else {
+            window.setTimeout(loadDeferredPanels, 0);
+        }
     }
 
     function dashboardTargetScreen(panel) {
         return String(panel.target_screen || panel.screen_key || "");
+    }
+
+    function activateDashboardPanel(targetScreen, actionKey) {
+        const normalizedTarget = String(targetScreen || "").trim();
+        const normalizedActionKey = String(actionKey || "").trim();
+        const currentScreenKey = String(state.screen?.screen?.key || "").trim();
+        if (normalizedTarget && normalizedTarget !== currentScreenKey) {
+            loadScreen(normalizedTarget);
+            return;
+        }
+        if (normalizedActionKey) {
+            runAction(normalizedActionKey, null, { params: {} });
+            return;
+        }
+    }
+
+    function actionResultSemantics(actionRef) {
+        const action = currentAction(actionRef);
+        if (!action || !Array.isArray(action.result_semantics)) {
+            return [];
+        }
+        return action.result_semantics
+            .map((semantic) => String(semantic || "").trim())
+            .filter(Boolean);
+    }
+
+    function panelPriority(panel) {
+        return String(panel?.user_priority || "p2").trim().toLowerCase() || "p2";
+    }
+
+    function panelPresentationSemantic(panel) {
+        const explicit = String(panel?.presentation_semantic || "").trim();
+        if (explicit) {
+            return explicit;
+        }
+        const semantics = actionResultSemantics(panel?.action_key);
+        return semantics[0] || "";
+    }
+
+    function panelPriorityLabel(priority) {
+        const normalized = String(priority || "").trim().toLowerCase();
+        if (normalized === "p0") {
+            return "P0";
+        }
+        if (normalized === "p1") {
+            return "P1";
+        }
+        return "P2";
+    }
+
+    function panelSemanticLabel(semantic) {
+        const labels = {
+            primary_status: "状态",
+            primary_list: "主任务",
+            supporting_list: "支撑列表",
+            copyable_secret: "凭证",
+            endpoint_list: "地址",
+            multiline_prompt: "提示词",
+            next_step: "下一步",
+            supporting_detail: "摘要",
+            debug_only: "调试",
+        };
+        return labels[String(semantic || "").trim()] || "概览";
+    }
+
+    function hasSemantic(semantics, value) {
+        return (semantics || []).includes(value);
+    }
+
+    function uniqueSemantics(values) {
+        const seen = new Set();
+        return (values || []).filter((value) => {
+            const text = String(value || "").trim();
+            if (!text || seen.has(text)) {
+                return false;
+            }
+            seen.add(text);
+            return true;
+        });
+    }
+
+    function panelEffectiveSemantics(panel) {
+        return uniqueSemantics([
+            panelPresentationSemantic(panel),
+            ...actionResultSemantics(panel?.action_key),
+        ]);
     }
 
     function defaultDashboardPanels(actions) {
@@ -1217,15 +2101,16 @@
         }));
     }
 
-    function dashboardLayout(panels) {
+    function dashboardLayout(panels, screen) {
         const areas = uniqueDashboardAreas(panels);
+        const desktopColumns = dashboardDesktopColumns(screen);
         return {
             areas,
             gridStyle: [
-                `--tui-dashboard-areas-desktop: ${dashboardAreaTemplate(areas, 3)}`,
+                `--tui-dashboard-areas-desktop: ${dashboardAreaTemplate(areas, desktopColumns, true)}`,
                 `--tui-dashboard-areas-tablet: ${dashboardAreaTemplate(areas, 2)}`,
                 `--tui-dashboard-areas-mobile: ${dashboardAreaTemplate(areas, 1)}`,
-                `--tui-dashboard-rows-desktop: ${dashboardRows(areas, 3, "minmax(0, 1fr)")}`,
+                `--tui-dashboard-rows-desktop: ${dashboardRows(areas, desktopColumns, "minmax(190px, auto)")}`,
                 `--tui-dashboard-rows-tablet: ${dashboardRows(areas, 2, "minmax(190px, 1fr)")}`,
                 `--tui-dashboard-rows-mobile: ${dashboardRows(areas, 1, "minmax(174px, auto)")}`,
             ].join("; "),
@@ -1254,9 +2139,11 @@
         return normalized && normalized !== "none" ? normalized : "";
     }
 
-    function dashboardAreaTemplate(areas, columns) {
+    function dashboardAreaTemplate(areas, columns, expandToTwelve = false) {
         const rows = chunkDashboardAreas(areas, columns);
-        return rows.map((row) => `"${expandDashboardRow(row).join(" ")}"`).join(" ");
+        return rows
+            .map((row) => `"${(expandToTwelve ? expandDashboardRow(row) : row).join(" ")}"`)
+            .join(" ");
     }
 
     function dashboardRows(areas, columns, rowSize) {
@@ -1289,23 +2176,126 @@
             return;
         }
         if (!panel.action_key) {
-            container.innerHTML = `<h3>${escapeHtml(panel.title)}</h3>${renderPanelPlaceholder(panel, "等待发布数据源。")}`;
+            container.innerHTML = renderDashboardPanelShell(panel, renderPanelPlaceholder(panel, "等待发布数据源。"));
+            bindDashboardPanelOpenControls(container);
             return;
         }
         try {
-            const result = await fetchJson(actionRunUrl(panel.action_key), {
-                method: "POST",
-                body: JSON.stringify({ params: {} }),
-            });
-            if (!renderDashboardRegisteredRenderer(panel, result.view_model, container)) {
-                container.innerHTML = `<h3>${escapeHtml(panel.title)}</h3>${renderDashboardPanelBody(panel, result.view_model)}`;
-                processHostSlot(container);
+            let viewModel = null;
+            let panelBadge = null;
+            if (typeof runtimeHooks.loadDashboardPanel === "function") {
+                const hosted = await runtimeHooks.loadDashboardPanel(panel, {
+                    actionRunUrl,
+                    fetchJson,
+                    screen: state.screen,
+                });
+                if (hosted) {
+                    viewModel = hosted.view_model || hosted;
+                    panelBadge = hosted.badge || badgeCountsFromRows(viewModel.rows || []);
+                }
+            }
+            const operatorSectionKey = isOperatorHomeScreen(state.screen?.screen?.key)
+                ? operatorHomePanelSectionKey(panel)
+                : "";
+            if (viewModel) {
+                // Host hook supplied a complete panel model.
+            } else if (operatorSectionKey) {
+                const homePayload = await loadOperatorHomeAggregate();
+                const payload = homePayload?.[operatorSectionKey] || {};
+                viewModel = operatorHomePanelViewModel(panel, payload);
+                panelBadge = payload?.badge
+                    ? {
+                        blockedCount: Number(payload.badge.blocked_count || 0),
+                        warningCount: Number(payload.badge.warning_count || 0),
+                    }
+                    : badgeCountsFromRows(viewModel.rows || []);
+            } else {
+                const result = await fetchJson(actionRunUrl(panel.action_key), {
+                    method: "POST",
+                    body: JSON.stringify({ params: {} }),
+                });
+                viewModel = result.view_model;
+                panelBadge = badgeCountsFromRows(Array.isArray(viewModel?.rows) ? viewModel.rows : []);
+            }
+            if (isOperatorHomeScreen(state.screen?.screen?.key)) {
+                state.homePanelBadges[panel.key] = panelBadge;
+            }
+            if (!renderDashboardRegisteredRenderer(panel, viewModel, container)) {
+                container.innerHTML = renderDashboardPanelShell(panel, renderDashboardPanelBody(panel, viewModel));
                 bindCopyButtons(container);
+                bindDashboardRowActions(container, panel);
+                bindDashboardPanelOpenControls(container);
+                processHostSlot(container);
+            }
+            if (isOperatorHomeScreen(state.screen?.screen?.key)) {
+                const badgeHost = container.querySelector("[data-panel-badge]");
+                if (badgeHost) {
+                    badgeHost.innerHTML = badgeMarkup(state.homePanelBadges[panel.key], { compact: true });
+                }
             }
             setLastRefresh();
         } catch (error) {
-            container.innerHTML = `<h3>${escapeHtml(panel.title)}</h3>${renderPanelPlaceholder(panel, error.message)}`;
+            container.innerHTML = renderDashboardPanelShell(panel, renderDashboardPanelError(panel, error));
+            bindDashboardPanelOpenControls(container);
+            bindDashboardPanelRecovery(container, panel);
         }
+    }
+
+    function renderDashboardPanelShell(panel, body) {
+        const content = `
+            <h3>
+                <span>${escapeHtml(panel.title)}</span>
+                <span class="tui-panel-heading-tools">
+                    <span class="tui-panel-priority">${escapeHtml(panelPriorityLabel(panelPriority(panel)))}</span>
+                    <span class="tui-panel-semantic">${escapeHtml(panelSemanticLabel(panelPresentationSemantic(panel)))}</span>
+                    <span data-panel-badge></span>
+                    ${dashboardPanelOpenButton(panel)}
+                </span>
+            </h3>
+            ${panel.note ? `<div class="tui-panel-caption">${escapeHtml(panel.note)}</div>` : ""}
+            ${body}
+        `;
+        if (panelPriority(panel) !== "p2") {
+            return content;
+        }
+        return `
+            <details class="tui-panel-disclosure">
+                <summary>展开${escapeHtml(panel.title)}</summary>
+                ${content}
+            </details>
+        `;
+    }
+
+    function dashboardPanelOpenButton(panel) {
+        const target = dashboardTargetScreen(panel);
+        const actionKey = String(panel?.action_key || "").trim();
+        if (!target && !actionKey) {
+            return "";
+        }
+        return `
+            <button
+                class="tui-dashboard-open"
+                type="button"
+                data-dashboard-open
+                data-dashboard-target="${escapeHtml(target)}"
+                data-dashboard-action="${escapeHtml(actionKey)}"
+                aria-label="打开${escapeHtml(panel.title || "面板")}"
+            >打开</button>
+        `;
+    }
+
+    function bindDashboardPanelOpenControls(root) {
+        root.querySelectorAll("[data-dashboard-open]").forEach((button) => {
+            if (button.dataset.dashboardOpenBound === "true") {
+                return;
+            }
+            button.dataset.dashboardOpenBound = "true";
+            button.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                activateDashboardPanel(button.dataset.dashboardTarget, button.dataset.dashboardAction);
+            });
+        });
     }
 
     function renderDashboardRegisteredRenderer(panel, viewModel, container) {
@@ -1317,10 +2307,10 @@
         if (!renderer) {
             return false;
         }
-        container.innerHTML = `
-            <h3>${escapeHtml(panel.title)}</h3>
-            <div class="tui-extension-host is-dashboard" data-renderer="${escapeHtml(rendererName)}"></div>
-        `;
+        container.innerHTML = renderDashboardPanelShell(
+            panel,
+            `<div class="tui-extension-host is-dashboard" data-renderer="${escapeHtml(rendererName)}"></div>`,
+        );
         const host = container.querySelector(".tui-extension-host");
         try {
             renderer({
@@ -1329,9 +2319,11 @@
                 runtimeConfig,
                 escapeHtml,
             });
-        } catch (error) {
-            host.innerHTML = renderEmptyState("自定义 renderer 执行失败。", [String(error.message || error)]);
+        } catch (_error) {
+            host.innerHTML = renderEmptyState("扩展视图暂时不可用。", ["请稍后重试，或改用默认任务查看数据。"]);
         }
+        bindCopyButtons(container);
+        bindDashboardPanelOpenControls(container);
         return true;
     }
 
@@ -1372,9 +2364,37 @@
         return `<div class="tui-message">${escapeHtml(viewModel.message || viewModel.status || "正常")}</div>`;
     }
 
+    function operatorHomePanelViewModel(panel, payload) {
+        const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+        const columns = (Array.isArray(panel?.columns) ? panel.columns : [])
+            .map((column) => ({
+                key: String(column?.key || "").trim(),
+                label: String(column?.label || column?.key || "").trim(),
+            }))
+            .filter((column) => column.key);
+        return {
+            kind: "datagrid",
+            title: panel?.title || "",
+            status: String(payload?.status || "ok"),
+            columns,
+            rows,
+            total: Number(payload?.total || rows.length || 0),
+            empty_message: "暂无数据",
+            empty_guidance: [],
+        };
+    }
+
+    function dashboardDesktopColumns(screen) {
+        const journey = screenUserExperience(screen).journey;
+        if ((runtimeConfig.host?.singleColumnScreens || []).includes(screen?.key)) {
+            return 1;
+        }
+        return ["self_service", "admin"].includes(journey) ? 2 : 3;
+    }
+
     function renderRegimePanel(viewModel) {
         const fields = fieldsToMap(viewModel.fields || []);
-        const regime = pickField(fields, ["current_regime", "regime", "regime_name", "state", "name"]) || "UNKNOWN";
+        const regime = pickField(fields, ["current_regime", "dominant_regime", "regime", "regime_name", "state", "name"]) || "UNKNOWN";
         const confidence = pickField(fields, ["confidence", "regime_confidence", "confidence_pct"]) || "-";
         const trend = pickField(fields, ["trend", "movement", "transition_target", "status"]) || "-";
         const warning = pickField(fields, ["warning", "transition_warning", "risk", "alerts"]) || "-";
@@ -1405,15 +2425,87 @@
         if (!rows.length || !columns.length) {
             return renderPanelPlaceholder(panel, "暂无表格数据。");
         }
-        return renderMiniTable(
-            columns.map((column) => column.label || column.key),
-            rows.map((row) => columns.map((column) => row[column.key] ?? "-")),
-        );
+        const rowActions = Array.isArray(panel.row_actions) ? panel.row_actions : [];
+        const headers = columns.map((column) => column.label || column.key);
+        if (rowActions.length) {
+            headers.push("操作");
+        }
+        return `
+            <table class="tui-mini-table">
+                <thead><tr>${headers.map((header, index) => `<th class="${rowActions.length && index === headers.length - 1 ? "tui-row-actions-header" : ""}">${escapeHtml(header)}</th>`).join("")}</tr></thead>
+                <tbody>
+                    ${rows.map((row) => `
+                        <tr>
+                            ${columns.map((column) => `<td class="${cellClass(row[column.key], column.label || column.key)}">${escapeHtml(row[column.key] ?? "-")}</td>`).join("")}
+                            ${rowActions.length ? `<td class="tui-row-actions-cell">${renderDashboardRowActions(panel, row)}</td>` : ""}
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
+        `;
+    }
+
+    function renderDashboardRowActions(panel, row) {
+        const descriptors = Array.isArray(panel?.row_actions) ? panel.row_actions : [];
+        return `<div class="tui-row-actions">${descriptors.map((descriptor) => {
+            const action = currentAction(descriptor.action_key);
+            const params = Object.fromEntries(
+                Object.entries(descriptor.param_map || {}).map(([paramKey, rowKey]) => [paramKey, row?.[rowKey]]),
+            );
+            const label = interpolateRowActionLabel(descriptor.label_template, row);
+            return `
+                <button
+                    class="tui-row-action"
+                    type="button"
+                    data-dashboard-row-action
+                    data-row-action-key="${escapeHtml(descriptor.action_key)}"
+                    data-row-action-params="${escapeHtml(JSON.stringify(params))}"
+                    aria-label="${escapeHtml(label)}"
+                    title="${escapeHtml(label)}"
+                >${escapeHtml(action?.label || "操作")}</button>
+            `;
+        }).join("")}</div>`;
+    }
+
+    function interpolateRowActionLabel(template, row) {
+        return String(template || "操作").replace(/\{([^{}]+)\}/g, (_match, key) => String(row?.[key] ?? "-"));
+    }
+
+    function bindDashboardRowActions(root, panel) {
+        root.querySelectorAll("[data-dashboard-row-action]").forEach((button) => {
+            if (button.dataset.rowActionBound === "true") {
+                return;
+            }
+            button.dataset.rowActionBound = "true";
+            button.addEventListener("click", async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                let params = {};
+                try {
+                    params = JSON.parse(button.dataset.rowActionParams || "{}");
+                } catch (_error) {
+                    setStatus("行操作参数不可用");
+                    return;
+                }
+                button.disabled = true;
+                try {
+                    await runAction(button.dataset.rowActionKey, null, {
+                        params,
+                        dashboardPanelKey: panel.key,
+                    });
+                } finally {
+                    button.disabled = false;
+                }
+            });
+        });
     }
 
     function renderPanelDetail(panel, viewModel) {
+        const semantics = panelEffectiveSemantics(panel);
+        if (semantics.length) {
+            return renderSemanticDetailView(viewModel, semantics, { compact: true, panel });
+        }
         const fields = (viewModel.fields || []).slice(0, Number(panel.max_rows || 8));
-        const semantic = panelPresentationSemantic(panel);
         if (!fields.length) {
             const nested = (viewModel.nested || []).slice(0, Number(panel.max_rows || 8));
             if (nested.length) {
@@ -1421,138 +2513,220 @@
             }
             return renderPanelPlaceholder(panel, "暂无摘要数据。");
         }
-        if (semantic === "copyable_secret" || semantic === "endpoint_list" || semantic === "multiline_prompt") {
-            return `
-                ${renderArtifactCollection(fields, [semantic], { compact: true, note: panel.note, fallbackRows: Number(panel.max_rows || 8) })}
-            `;
-        }
         return `
             ${renderMiniTable(["项目", "值"], fields.map((field) => [field.label, field.value]))}
             ${panel.note ? `<div class="tui-panel-note">${escapeHtml(panel.note)}</div>` : ""}
         `;
     }
 
-    function panelPresentationSemantic(panel) {
-        const explicit = String(panel?.presentation_semantic || "").trim();
-        if (explicit) {
-            return explicit;
-        }
-        const action = currentAction(panel?.action_key || "");
-        return primaryResultSemantic(action);
+    function currentActionSemantics() {
+        return actionResultSemantics(state.lastAction);
     }
 
-    function primaryResultSemantic(action) {
-        const semantics = Array.isArray(action?.result_semantics) ? action.result_semantics : [];
-        return semantics.find((semantic) => ["copyable_secret", "endpoint_list", "multiline_prompt"].includes(semantic)) || semantics[0] || "";
-    }
-
-    function activeResultSemantics() {
-        const action = currentAction(state.lastAction);
-        return Array.isArray(action?.result_semantics) ? action.result_semantics : [];
-    }
-
-    function fieldLooksLikeToken(field) {
-        const haystack = `${field?.key || ""} ${field?.label || ""}`.toLowerCase();
-        return /token|secret|api[_\s-]?key|access[_\s-]?key/.test(haystack);
-    }
-
-    function fieldLooksLikeEndpoint(field) {
-        const textValue = String(field?.value ?? "").trim();
-        const haystack = `${field?.key || ""} ${field?.label || ""}`.toLowerCase();
-        return /^https?:\/\//i.test(textValue) || /endpoint|route api|web chat|catalog|base url|api root|url/.test(haystack);
-    }
-
-    function fieldLooksLikePrompt(field) {
-        const textValue = String(field?.value ?? "");
-        const haystack = `${field?.key || ""} ${field?.label || ""}`.toLowerCase();
-        return /prompt/.test(haystack) || textValue.includes("\n") || textValue.length > 120;
-    }
-
-    function selectArtifactFields(fields, semantics) {
-        const semanticSet = new Set((semantics || []).map((item) => String(item || "")));
-        const sourceFields = Array.isArray(fields) ? fields : [];
-        if (semanticSet.has("multiline_prompt")) {
-            const promptFields = sourceFields.filter(fieldLooksLikePrompt);
-            return promptFields.length ? promptFields : sourceFields.slice(-1);
-        }
-        if (semanticSet.has("endpoint_list")) {
-            const endpointFields = sourceFields.filter(fieldLooksLikeEndpoint);
-            return endpointFields.length ? endpointFields : sourceFields;
-        }
-        if (semanticSet.has("copyable_secret")) {
-            const tokenFields = sourceFields.filter(fieldLooksLikeToken);
-            return tokenFields.length ? tokenFields : sourceFields.slice(0, 1);
-        }
-        return [];
-    }
-
-    function artifactFieldIds(fields, prefix) {
-        return fields.map((field, index) => {
-            const base = sanitizeDashboardArea(`${prefix}-${field.key || field.label || index + 1}`) || `${prefix}-${index + 1}`;
-            return `${base}-${index + 1}`;
-        });
-    }
-
-    function supportingDetailRows(fields, artifactFields, maxRows) {
-        const artifactSet = new Set((artifactFields || []).map((field) => `${field.key || ""}::${field.label || ""}`));
-        return (fields || [])
-            .filter((field) => !artifactSet.has(`${field.key || ""}::${field.label || ""}`))
-            .slice(0, maxRows);
-    }
-
-    function renderArtifactCollection(fields, semantics, options = {}) {
-        const compact = Boolean(options.compact);
-        const artifactFields = selectArtifactFields(fields, semantics);
-        if (!artifactFields.length) {
-            return renderMiniTable(
-                ["项目", "值"],
-                (fields || []).slice(0, Number(options.fallbackRows || 8)).map((field) => [field.label, field.value]),
-            );
-        }
-        const ids = artifactFieldIds(artifactFields, compact ? "panel-artifact" : "detail-artifact");
-        const supportRows = supportingDetailRows(fields, artifactFields, compact ? 3 : 12);
-        return `
-            <div class="tui-artifact-stack ${compact ? "is-compact" : ""}">
-                ${artifactFields.map((field, index) => renderArtifactField(field, ids[index], semantics, { compact })).join("")}
-            </div>
-            ${supportRows.length ? `
-                <dl class="tui-detail-grid tui-artifact-support">
-                    ${supportRows.map((field) => `
-                        <dt>${escapeHtml(field.label)}</dt>
-                        <dd>${escapeHtml(String(field.value ?? "-"))}</dd>
-                    `).join("")}
-                </dl>
-            ` : ""}
-            ${options.note ? `<div class="tui-panel-note">${escapeHtml(options.note)}</div>` : ""}
-        `;
-    }
-
-    function renderArtifactField(field, fieldId, semantics, options = {}) {
-        const compact = Boolean(options.compact);
-        const semanticSet = new Set((semantics || []).map((item) => String(item || "")));
-        const label = String(field?.label || field?.key || "值");
-        const value = String(field?.value ?? "");
-        const isPrompt = semanticSet.has("multiline_prompt") && fieldLooksLikePrompt(field);
-        const isEndpoint = semanticSet.has("endpoint_list") && fieldLooksLikeEndpoint(field);
-        const artifactClass = [
-            "tui-artifact",
-            isPrompt ? "is-prompt" : "",
-            isEndpoint ? "is-endpoint" : "",
-            semanticSet.has("copyable_secret") ? "is-secret" : "",
-            compact ? "is-compact" : "",
+    function renderSemanticDetailView(viewModel, semantics, options = {}) {
+        const fields = (viewModel.fields || []).slice(0, Number(options.panel?.max_rows || 12));
+        const nested = (viewModel.nested || []).slice(0, Number(options.panel?.max_rows || 12));
+        const classes = [
+            "tui-semantic-detail",
+            options.compact ? "is-compact" : "",
+            hasSemantic(semantics, "primary_status") ? "is-primary-status" : "",
+            hasSemantic(semantics, "copyable_secret") ? "is-copyable-secret" : "",
+            hasSemantic(semantics, "endpoint_list") ? "is-endpoint-list" : "",
+            hasSemantic(semantics, "multiline_prompt") ? "is-multiline-prompt" : "",
         ].filter(Boolean).join(" ");
-        const body = isPrompt
-            ? `<pre id="${escapeHtml(fieldId)}" class="tui-artifact-pre">${escapeHtml(value)}</pre>`
-            : `<code id="${escapeHtml(fieldId)}" class="tui-artifact-code">${escapeHtml(value)}</code>`;
-        return `
-            <section class="${artifactClass}">
-                <div class="tui-artifact-head">
-                    <strong>${escapeHtml(label)}</strong>
-                    <button type="button" class="tui-copy-button" data-copy-target="${escapeHtml(fieldId)}">复制</button>
+        const statusHero = hasSemantic(semantics, "primary_status")
+            ? `
+                <div class="tui-status-hero">
+                    <strong>${escapeHtml(viewModel.title || "状态")}</strong>
+                    <span class="tui-status-pill">${escapeHtml(viewModel.status || "正常")}</span>
                 </div>
-                ${body}
+            `
+            : "";
+        const secretFields = fields.filter((field) => fieldPresentation(field) === "secret");
+        const copyFields = fields.filter((field) => fieldPresentation(field) === "copyable");
+        const multilineFields = fields.filter((field) => fieldPresentation(field) === "multiline");
+        const metaFields = fields.filter((field) => fieldPresentation(field) === "metadata");
+        const fieldMarkup = [
+            secretFields.length ? renderSemanticSecretFields(secretFields) : "",
+            copyFields.length ? renderSemanticCopyFields(copyFields) : "",
+            metaFields.length ? renderSemanticGridFields(metaFields) : "",
+            multilineFields.length ? renderSemanticMultilineFields(multilineFields) : "",
+        ].filter(Boolean).join("");
+        const nestedMarkup = nested.length
+            ? `<div class="tui-nested-list">${nested.map((item) => `<span>${escapeHtml(item.label)}: ${escapeHtml(item.count)} 行</span>`).join("")}</div>`
+            : "";
+        return `
+            <section class="${classes}">
+                ${statusHero}
+                ${fieldMarkup || renderPanelPlaceholder(options.panel || {}, "暂无摘要数据。")}
+                ${nestedMarkup}
             </section>
         `;
+    }
+
+    function renderSemanticGridFields(fields) {
+        if (!fields.length) {
+            return "";
+        }
+        return `
+            <dl class="tui-detail-grid">
+                ${fields.map((field) => `
+                    <dt>${escapeHtml(field.label)}</dt>
+                    <dd>${escapeHtml(field.value)}</dd>
+                `).join("")}
+            </dl>
+        `;
+    }
+
+    function fieldPresentation(field) {
+        const presentation = String(field?.presentation || "metadata").trim().toLowerCase();
+        return ["secret", "copyable", "multiline", "metadata"].includes(presentation)
+            ? presentation
+            : "metadata";
+    }
+
+    function renderSemanticSecretFields(fields) {
+        return `
+            <div class="tui-copy-stack">
+                ${fields.map((field) => `
+                    <div class="tui-copy-row is-secret">
+                        <div class="tui-copy-head">
+                            <span>${escapeHtml(field.label)}</span>
+                            <span class="tui-copy-controls">
+                                <button
+                                    class="tui-copy-action"
+                                    type="button"
+                                    data-secret-toggle
+                                    data-secret-visible="true"
+                                    aria-label="隐藏${escapeHtml(field.label)}"
+                                >隐藏</button>
+                                <button
+                                    class="tui-copy-action"
+                                    type="button"
+                                    data-copy-value="${escapeHtml(field.value)}"
+                                    data-copy-label="${escapeHtml(field.label)}"
+                                >复制</button>
+                            </span>
+                        </div>
+                        <code data-secret-value="${escapeHtml(field.value)}">${escapeHtml(field.value)}</code>
+                    </div>
+                `).join("")}
+            </div>
+        `;
+    }
+
+    function renderSemanticCopyFields(fields) {
+        if (!fields.length) {
+            return "";
+        }
+        return `
+            <div class="tui-copy-stack">
+                ${fields.map((field) => `
+                    <div class="tui-copy-row">
+                        <div class="tui-copy-head">
+                            <span>${escapeHtml(field.label)}</span>
+                            <button
+                                class="tui-copy-action"
+                                type="button"
+                                data-copy-value="${escapeHtml(field.value)}"
+                                data-copy-label="${escapeHtml(field.label)}"
+                            >复制</button>
+                        </div>
+                        <code>${escapeHtml(field.value)}</code>
+                    </div>
+                `).join("")}
+            </div>
+        `;
+    }
+
+    function renderSemanticMultilineFields(fields) {
+        if (!fields.length) {
+            return "";
+        }
+        return `
+            <div class="tui-copy-stack">
+                ${fields.map((field) => {
+                    const accessPackage = String(field?.key || "") === "access_package";
+                    return `
+                    <section class="tui-copy-block-card${accessPackage ? " is-dominant" : ""}">
+                        <div class="tui-copy-head">
+                            <strong>${escapeHtml(field.label)}</strong>
+                            <button
+                                class="tui-copy-action"
+                                type="button"
+                                data-copy-value="${escapeHtml(field.value)}"
+                                data-copy-label="${escapeHtml(field.label)}"
+                            >${accessPackage ? "复制完整接入包" : "复制"}</button>
+                        </div>
+                        <pre class="tui-copy-block">${escapeHtml(field.value)}</pre>
+                    </section>
+                `;
+                }).join("")}
+            </div>
+        `;
+    }
+
+    async function writeClipboardText(value) {
+        const text = String(value ?? "");
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            await navigator.clipboard.writeText(text);
+            return;
+        }
+        const helper = document.createElement("textarea");
+        helper.value = text;
+        helper.setAttribute("readonly", "readonly");
+        helper.style.position = "fixed";
+        helper.style.opacity = "0";
+        helper.style.pointerEvents = "none";
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand("copy");
+        document.body.removeChild(helper);
+    }
+
+    function bindCopyButtons(root = document) {
+        root.querySelectorAll("[data-secret-toggle]").forEach((button) => {
+            if (button.dataset.secretBound === "true") {
+                return;
+            }
+            button.dataset.secretBound = "true";
+            button.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const code = button.closest(".tui-copy-row")?.querySelector("[data-secret-value]");
+                if (!code) {
+                    return;
+                }
+                const visible = button.dataset.secretVisible === "true";
+                button.dataset.secretVisible = visible ? "false" : "true";
+                button.textContent = visible ? "显示" : "隐藏";
+                button.setAttribute("aria-label", visible ? "显示接入令牌" : "隐藏接入令牌");
+                code.textContent = visible ? "••••••••••••" : code.dataset.secretValue;
+            });
+        });
+        root.querySelectorAll("[data-copy-value]").forEach((button) => {
+            if (button.dataset.copyBound === "true") {
+                return;
+            }
+            button.dataset.copyBound = "true";
+            button.addEventListener("click", async (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const label = String(button.dataset.copyLabel || "内容").trim();
+                const originalText = button.textContent;
+                try {
+                    await writeClipboardText(button.dataset.copyValue || "");
+                    button.textContent = "已复制";
+                    setStatus(`${label}已复制`);
+                } catch (_error) {
+                    button.textContent = "复制失败";
+                    setStatus(`${label}复制失败`);
+                }
+                window.setTimeout(() => {
+                    button.textContent = originalText;
+                }, 1200);
+            });
+        });
     }
 
     function fieldsToMap(fields) {
@@ -1589,7 +2763,7 @@
                 <tbody>
                     ${rows.map((row, index) => `
                         <tr class="${index === selectedIndex ? "is-hot" : ""}">
-                            ${row.map((cell) => `<td class="${cellClass(cell)}">${escapeHtml(cell)}</td>`).join("")}
+                            ${row.map((cell, cellIndex) => `<td class="${cellClass(cell, headers[cellIndex])}">${escapeHtml(cell)}</td>`).join("")}
                         </tr>
                     `).join("")}
                 </tbody>
@@ -1597,12 +2771,16 @@
         `;
     }
 
-    function cellClass(value) {
+    function cellClass(value, header = "") {
         const text = String(value);
-        if (text.includes("-") || text.includes("暂停") || text.includes("触发")) {
+        const headerText = String(header || "");
+        if (["标的", "代码", "名称", "股票", "资产", "证券"].some((item) => headerText.includes(item))) {
+            return "";
+        }
+        if (/^-\d+(?:\.\d+)?%?$/.test(text.trim()) || text.includes("暂停") || text.includes("触发")) {
             return "is-red";
         }
-        if (text.includes("观察") || text.includes("中")) {
+        if (text.includes("观察") || /(进行中|运行中|处理中|同步中|排队中)/.test(text)) {
             return "is-yellow";
         }
         if (text.includes("正常") || text.includes("运行") || text.includes("成功") || text.includes("%")) {
@@ -2106,16 +3284,22 @@
 
     async function loadScreen(screenKey, options = {}) {
         try {
+            clearPendingRequest({ abort: true });
             closeMenu();
             closeModal();
             els.main.innerHTML = '<div class="tui-loading">正在加载工作区...</div>';
             setStatus("加载工作区");
             const screenSpec = await fetchJson(screenUrl(screenKey));
+            if (isOperatorHomeScreen(screenSpec?.screen?.key)) {
+                state.operatorHomePayload = null;
+                state.operatorHomePromise = null;
+            }
             renderScreen(screenSpec, options);
+            refreshGovernanceBadges();
             return screenSpec;
         } catch (error) {
             resetLocationInput();
-            renderError(error.message);
+            renderBoundedApplicationError(error);
             return null;
         }
     }
@@ -2127,6 +3311,10 @@
             return;
         }
         const actualActionKey = action.key;
+        if (isHomeClientAction(actualActionKey)) {
+            executeHomeAction(actualActionKey);
+            return;
+        }
         try {
             const params = options.params ? { ...options.params } : (form ? await collectParams(form, action) : { ...state.lastParams });
             state.lastAction = actualActionKey;
@@ -2135,8 +3323,12 @@
             setCurrentLocation(action);
             closeMenu();
             closeModal();
-            els.main.innerHTML = '<div class="tui-loading">正在读取业务数据...</div>';
-            setStatus("读取数据");
+            const controller = new AbortController();
+            const requestId = startPendingRequest(controller);
+            if (!options.dashboardPanelKey) {
+                renderActionLoadingState(action, state.screen);
+                scheduleSlowActionState(requestId, action);
+            }
             const requestBody = { params, confirmed: Boolean(options.confirmed) };
             if (options.confirmation) {
                 requestBody.confirmation = options.confirmation;
@@ -2147,10 +3339,14 @@
             const result = await fetchJson(actionRunUrl(actualActionKey), {
                 method: "POST",
                 body: JSON.stringify(requestBody),
+                signal: controller.signal,
             });
+            clearPendingRequest();
             if (Array.isArray(result.missing_fields) && result.missing_fields.length) {
                 state.lastRaw = null;
-                renderViewModel(result.view_model);
+                if (!options.dashboardPanelKey) {
+                    renderViewModel(result.view_model);
+                }
                 showMissingFieldsPrompt(result, actualActionKey, params, options);
                 updateRawDrawer();
                 setStatus("等待补填");
@@ -2158,15 +3354,19 @@
             }
             if (result.confirmation_required) {
                 state.lastRaw = null;
-                renderViewModel(result.view_model);
-                showActionConfirmation(result, actualActionKey, params);
+                if (!options.dashboardPanelKey) {
+                    renderViewModel(result.view_model);
+                }
+                showActionConfirmation(result, actualActionKey, params, options);
                 updateRawDrawer();
                 setStatus("等待确认");
                 return;
             }
             if (result.password_challenge_required) {
                 state.lastRaw = null;
-                renderViewModel(result.view_model);
+                if (!options.dashboardPanelKey) {
+                    renderViewModel(result.view_model);
+                }
                 showPasswordChallenge(result, actualActionKey, params, options);
                 updateRawDrawer();
                 setStatus("等待验密");
@@ -2174,6 +3374,13 @@
             }
             markActionCompleted(action);
             state.lastRaw = result.debug?.raw_response ?? null;
+            if (options.dashboardPanelKey) {
+                updateRawDrawer();
+                await refreshCurrentDashboardPanels();
+                setStatus("操作完成，列表已刷新");
+                refreshGovernanceBadges();
+                return;
+            }
             if (!isImmersiveDashboardScreen(state.screen?.screen)) {
                 renderActions(state.screen.actions || [], state.screen.screen);
             }
@@ -2181,9 +3388,42 @@
             renderResultInspector(result, result.view_model);
             updateRawDrawer();
             setStatus("读取完成");
+            refreshGovernanceBadges();
         } catch (error) {
-            renderError(error.message);
+            if (error?.name === "AbortError") {
+                setStatus("请求已取消");
+                return;
+            }
+            clearPendingRequest();
+            if (options.dashboardPanelKey) {
+                const panels = Array.isArray(state.screen?.screen?.dashboard_panels)
+                    ? state.screen.screen.dashboard_panels
+                    : [];
+                const panel = panels.find((item) => item.key === options.dashboardPanelKey);
+                const container = panel
+                    ? els.main.querySelector(`[data-dashboard-panel="${CSS.escape(panel.key)}"]`)
+                    : null;
+                if (panel && container) {
+                    container.innerHTML = renderDashboardPanelShell(
+                        panel,
+                        renderDashboardPanelError(panel, error),
+                    );
+                    bindDashboardPanelOpenControls(container);
+                    bindDashboardPanelRecovery(container, panel);
+                } else {
+                    renderBoundedApplicationError(error);
+                }
+            } else {
+                renderBoundedApplicationError(error);
+            }
         }
+    }
+
+    async function refreshCurrentDashboardPanels() {
+        const panels = Array.isArray(state.screen?.screen?.dashboard_panels)
+            ? state.screen.screen.dashboard_panels
+            : [];
+        await Promise.all(panels.map((panel) => loadDashboardPanel(panel)));
     }
 
     function renderViewModel(viewModel) {
@@ -2226,8 +3466,8 @@
             resetGridState({ preserveRowContext: true });
             renderMessage(viewModel);
         }
-        bindCopyButtons(els.main);
         bindDecisionCueActions();
+        bindCopyButtons(els.main);
         updatePager(viewModel.pager || null);
         refreshRowFillButtons();
     }
@@ -2254,8 +3494,8 @@
                 runtimeConfig,
                 escapeHtml,
             });
-        } catch (error) {
-            host.innerHTML = renderEmptyState("自定义 renderer 执行失败。", [String(error.message || error)]);
+        } catch (_error) {
+            host.innerHTML = renderEmptyState("扩展视图暂时不可用。", ["请稍后重试，或改用默认任务查看数据。"]);
         }
         return true;
     }
@@ -2290,6 +3530,9 @@
             }
             return;
         }
+        if (announce) {
+            state.clientPage = 1;
+        }
         state.visibleRows = state.currentRows.filter(rowMatchesFilter);
         state.selectedRowIndex = Math.min(state.selectedRowIndex, Math.max(0, state.visibleRows.length - 1));
         drawDataGrid();
@@ -2301,8 +3544,14 @@
     function drawDataGrid() {
         const viewModel = state.currentViewModel;
         const columns = state.currentColumns;
-        const rows = state.visibleRows;
-        const filterSuffix = state.filterText ? ` / 筛选: ${state.filterText} (${rows.length}/${state.currentRows.length})` : "";
+        const allRows = state.visibleRows;
+        const localPage = !viewModel.pager && typeof runtimeCore.clientPage === "function"
+            ? runtimeCore.clientPage(allRows, state.clientPage, state.clientPageSize)
+            : { rows: allRows, pager: null };
+        const rows = localPage.rows;
+        const activePager = viewModel.pager || localPage.pager;
+        state.lastPager = activePager;
+        const filterSuffix = state.filterText ? ` / 筛选: ${state.filterText} (${allRows.length}/${state.currentRows.length})` : "";
         const emptyMessage = state.filterText
             ? "没有匹配的记录。"
             : (viewModel.empty_message || "暂无可显示数据。");
@@ -2321,14 +3570,18 @@
                     </tbody>
                 </table>
             `
-            : renderEmptyState(emptyMessage, state.filterText ? ["清空筛选后查看全部记录。"] : viewModel.empty_guidance);
+            : renderEmptyState(
+                emptyMessage,
+                state.filterText ? ["清空筛选后查看全部记录。"] : viewModel.empty_guidance,
+                state.filterText ? [] : viewModel.next_steps,
+            );
         els.main.innerHTML = `
             <div class="tui-view-status">${escapeHtml(viewModel.status)} / ${escapeHtml(viewModel.title)}${escapeHtml(filterSuffix)}</div>
             ${renderDecisionCue(viewModel)}
             <div class="tui-datagrid" role="grid" tabindex="0" aria-label="${escapeHtml(viewModel.title)}">
                 ${gridBody}
             </div>
-            ${renderDataGridPager(viewModel.pager)}
+            ${renderDataGridPager(activePager)}
         `;
         els.main.querySelectorAll("[data-row-index]").forEach((row) => {
             row.addEventListener("click", () => selectRow(Number(row.dataset.rowIndex || 0)));
@@ -2337,6 +3590,7 @@
         els.main.querySelectorAll("[data-page-delta]").forEach((button) => {
             button.addEventListener("click", () => pageDelta(Number(button.dataset.pageDelta || 0)));
         });
+        bindNextStepButtons(els.main, viewModel.next_steps);
         if (rows.length) {
             state.selectedRowContext = rowContextWithSource(rows[state.selectedRowIndex]);
         } else {
@@ -2363,8 +3617,9 @@
         `;
     }
 
-    function renderEmptyState(message, guidance) {
+    function renderEmptyState(message, guidance, nextSteps = []) {
         const lines = (guidance || []).filter(Boolean);
+        const steps = Array.isArray(nextSteps) ? nextSteps : [];
         return `
             <div class="tui-empty-state tui-empty-guidance">
                 <strong>${escapeHtml(message)}</strong>
@@ -2373,51 +3628,42 @@
                         ${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}
                     </ul>
                 ` : ""}
+                ${steps.length ? `
+                    <div class="tui-entry-actions">
+                        ${steps.map((step, index) => `
+                            <button type="button" data-next-step-index="${index}">
+                                ${escapeHtml(step.label || "继续")}
+                            </button>
+                        `).join("")}
+                    </div>
+                ` : ""}
             </div>
         `;
     }
 
-    function bindCopyButtons(container) {
-        (container || document).querySelectorAll("[data-copy-target]").forEach((button) => {
-            button.addEventListener("click", async () => {
-                const targetId = button.dataset.copyTarget;
-                const source = targetId ? document.getElementById(targetId) : null;
-                const text = source ? String(source.textContent || "").trim() : "";
-                if (!text) {
-                    setStatus("没有可复制内容");
-                    return;
-                }
-                const copied = await copyTextToClipboard(text);
-                setStatus(copied ? "已复制到剪贴板" : "复制失败，请手动复制");
+    function bindNextStepButtons(container, nextSteps) {
+        container.querySelectorAll("[data-next-step-index]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const index = Number(button.dataset.nextStepIndex || 0);
+                executeNextStep((nextSteps || [])[index]);
             });
         });
     }
 
-    async function copyTextToClipboard(text) {
-        try {
-            if (navigator?.clipboard?.writeText) {
-                await navigator.clipboard.writeText(text);
-                return true;
-            }
-        } catch (error) {
-            // Fall back to a hidden textarea for browsers without clipboard permission.
+    function executeNextStep(step) {
+        if (!step) {
+            return;
         }
-        const textarea = document.createElement("textarea");
-        textarea.value = text;
-        textarea.setAttribute("readonly", "readonly");
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
-        textarea.style.pointerEvents = "none";
-        document.body.appendChild(textarea);
-        textarea.select();
-        let copied = false;
-        try {
-            copied = document.execCommand("copy");
-        } catch (error) {
-            copied = false;
+        if (step.action_key) {
+            const params = step.params && typeof step.params === "object" ? step.params : { ...state.lastParams };
+            runAction(step.action_key, null, { params });
+            return;
         }
-        textarea.remove();
-        return copied;
+        if (step.screen_key) {
+            loadScreen(step.screen_key);
+            return;
+        }
+        setStatus(step.hint || "已记录下一步");
     }
 
     function renderChart(viewModel) {
@@ -2735,29 +3981,23 @@
     }
 
     function renderDetail(viewModel) {
-        const fields = viewModel.fields || [];
-        const nested = viewModel.nested || [];
-        const semantics = activeResultSemantics();
-        const hasArtifactSemantics = semantics.some((semantic) => ["copyable_secret", "endpoint_list", "multiline_prompt"].includes(semantic));
+        const semantics = currentActionSemantics();
+        const detailBody = semantics.length
+            ? renderSemanticDetailView(viewModel, semantics)
+            : renderSemanticGridFields(viewModel.fields || []);
+        const nested = semantics.length ? [] : (viewModel.nested || []);
         els.main.innerHTML = `
             <div class="tui-view-status">${escapeHtml(viewModel.status)} / ${escapeHtml(viewModel.title)}</div>
             ${renderDecisionCue(viewModel)}
-            ${hasArtifactSemantics
-                ? renderArtifactCollection(fields, semantics, { fallbackRows: 12 })
-                : `
-                    <dl class="tui-detail-grid">
-                        ${fields.map((field) => `
-                            <dt>${escapeHtml(field.label)}</dt>
-                            <dd>${escapeHtml(field.value)}</dd>
-                        `).join("")}
-                    </dl>
-                `}
+            ${detailBody || renderEmptyState("暂无摘要数据。", [])}
             ${nested.length ? `
                 <div class="tui-nested-list">
                     ${nested.map((item) => `<span>${escapeHtml(item.label)}: ${escapeHtml(item.count)} 行</span>`).join("")}
                 </div>
             ` : ""}
+            ${Array.isArray(viewModel.next_steps) && viewModel.next_steps.length ? renderEmptyState("建议下一步", [], viewModel.next_steps) : ""}
         `;
+        bindNextStepButtons(els.main, viewModel.next_steps);
     }
 
     function renderMessage(viewModel) {
@@ -2782,14 +4022,15 @@
             <div class="tui-view-status">${escapeHtml(viewModel.status || "正常")} / ${escapeHtml(viewModel.title || "消息")}</div>
             ${renderDecisionCue(viewModel)}
             <div class="tui-message-list">${body}</div>
+            ${Array.isArray(viewModel.next_steps) && viewModel.next_steps.length ? renderEmptyState("建议下一步", [], viewModel.next_steps) : ""}
         `;
+        bindNextStepButtons(els.main, viewModel.next_steps);
     }
 
     function renderDecisionCue(viewModel) {
         const screen = state.screen?.screen || {};
         const context = screen.business_context || {};
-        const userExperience = screenUserExperience(screen);
-        if (!context.decision_output && !context.objective && !userExperience.primary_outcome) {
+        if (!context.decision_output && !context.objective && !viewModel?.business_summary) {
             return "";
         }
         const workflow = screen.workflow || {};
@@ -2797,10 +4038,14 @@
         const actions = (state.screen && state.screen.actions) || [];
         const summary = summarizeActions(actions);
         const evidence = resultEvidenceLabel(viewModel);
+        const businessSummary = String(viewModel?.business_summary || "").trim();
         const rows = [
-            ["判断产出", userExperience.primary_outcome || context.decision_output || context.objective],
+            ["判断产出", businessSummary || context.decision_output || context.objective],
             ["当前证据", evidence],
         ];
+        if (viewModel?.blocking_reason) {
+            rows.push(["当前阻断", viewModel.blocking_reason]);
+        }
         const cueActions = [];
         if (summary.operation) {
             rows.push(["可执行操作", `${summary.operation} 项，提交前确认`]);
@@ -2827,8 +4072,6 @@
                 key: "F4",
                 title: "进入流程下一屏",
             });
-        } else if (userExperience.next_step_hint) {
-            rows.push(["下一步", userExperience.next_step_hint]);
         }
         return `
             <section class="tui-decision-cue">
@@ -3197,6 +4440,21 @@
     }
 
     async function pageDelta(delta) {
+        if (state.lastPager?.client_side) {
+            if (delta < 0 && !state.lastPager.has_previous) {
+                setStatus("已经是第一页");
+                return;
+            }
+            if (delta > 0 && !state.lastPager.has_next) {
+                setStatus("已经是最后一页");
+                return;
+            }
+            state.clientPage = Math.max(1, state.clientPage + delta);
+            state.selectedRowIndex = 0;
+            drawDataGrid();
+            setStatus(`第 ${state.clientPage} 页`);
+            return;
+        }
         if (!state.lastAction || !state.lastPager) {
             setStatus("当前视图不可翻页");
             return;
@@ -3361,7 +4619,7 @@
         form.querySelector("select, input, textarea")?.focus();
     }
 
-    function showActionConfirmation(result, actionKey, params) {
+    function showActionConfirmation(result, actionKey, params, options = {}) {
         const confirmation = result.confirmation || {};
         showModal(confirmation.title || "确认操作", `
             <div class="tui-confirmation">
@@ -3377,6 +4635,7 @@
         confirmButton.addEventListener("click", () => {
             closeModal();
             runAction(actionKey, null, {
+                ...options,
                 confirmed: true,
                 params,
                 confirmation: {
@@ -3449,7 +4708,31 @@
             <dt>${escapeHtml(key)}</dt>
             <dd>${escapeHtml(value)}</dd>
         `).join("");
-        showModal(`第 ${state.selectedRowIndex + 1} 行`, `<dl class="tui-detail-grid">${rows}</dl>`);
+        const targetScreen = String(row?.target_screen || "").trim();
+        const targetActionKey = String(row?.target_action_key || "").trim();
+        const canDrillDown = Boolean(targetScreen || targetActionKey);
+        showModal(
+            `第 ${state.selectedRowIndex + 1} 行`,
+            `
+                <dl class="tui-detail-grid">${rows}</dl>
+                ${canDrillDown ? `
+                    <div class="tui-modal-actions">
+                        <button type="button" data-row-target-screen="${escapeHtml(targetScreen)}" data-row-target-action="${escapeHtml(targetActionKey)}">进入处理屏</button>
+                    </div>
+                ` : ""}
+            `,
+        );
+        els.modalBody?.querySelector("[data-row-target-screen], [data-row-target-action]")?.addEventListener("click", async () => {
+            closeModal();
+            const nextScreen = targetScreen || state.screen?.screen?.key || "";
+            if (!nextScreen) {
+                return;
+            }
+            await loadScreen(nextScreen);
+            if (targetActionKey && currentAction(targetActionKey)) {
+                runAction(targetActionKey, null, { params: {} });
+            }
+        });
         setStatus("行详情");
     }
 
@@ -3565,6 +4848,11 @@
     }
 
     function focusActions() {
+        const grid = els.main.closest(".tui-workspace-grid");
+        if (grid?.classList.contains("is-dashboard")) {
+            grid.classList.remove("is-dashboard");
+            setWorkspaceViewKind("idle");
+        }
         const actionFilter = els.actions.querySelector("[data-action-filter]");
         if (actionFilter) {
             actionFilter.focus();
@@ -3721,6 +5009,13 @@
     }
 
     function loadWorkflowStep(direction) {
+        if (isOperatorHomeScreen(state.screen?.screen?.key)) {
+            const actionKey = runtimeConfig.host?.laneActionKeys?.[state.preferredHomeLane];
+            if (actionKey) {
+                executeHomeAction(actionKey);
+            }
+            return;
+        }
         const workflow = state.screen?.screen?.workflow || {};
         const target = direction < 0 ? workflow.previous : workflow.next;
         if (target && target.key) {
@@ -3806,6 +5101,13 @@
     }
 
     function runNextPrimaryAction() {
+        if (isOperatorHomeScreen(state.screen?.screen?.key)) {
+            const actionKey = runtimeConfig.host?.laneActionKeys?.[state.preferredHomeLane];
+            if (actionKey) {
+                executeHomeAction(actionKey);
+            }
+            return;
+        }
         const action = nextPrimaryAction();
         if (!action) {
             setStatus("本屏主流程已完成");
@@ -3994,6 +5296,9 @@
     }
 
     function bindControls() {
+        const applyFilterDebounced = typeof runtimeCore.debounce === "function"
+            ? runtimeCore.debounce(() => applyFilter(true), 120)
+            : () => applyFilter(true);
         els.actions?.addEventListener("submit", (event) => {
             const form = event.target?.closest?.("[data-action-ui-key]");
             if (!form) {
@@ -4046,7 +5351,7 @@
         els.modalClose.addEventListener("click", closeModal);
         els.filterInput.addEventListener("input", () => {
             state.filterText = els.filterInput.value;
-            applyFilter(true);
+            applyFilterDebounced();
         });
         els.filterInput.addEventListener("keydown", (event) => {
             if (event.key === "Enter") {
@@ -4116,19 +5421,61 @@
     }
 
     async function bootstrap() {
+        runtimeCore.mark?.("bootstrap-start");
         try {
             els.moduleTree.innerHTML = '<div class="tui-loading">正在加载目录...</div>';
             setStatus("启动中");
+            const requestedScreen = shouldResumeOnBoot() && state.lastNonHomeScreen
+                ? state.lastNonHomeScreen
+                : "";
+            const optimizedUrl = bootstrapUrl(requestedScreen);
+            if (optimizedUrl) {
+                try {
+                    const payload = await fetchJson(optimizedUrl);
+                    if (payload?.contract === "tui-bootstrap.v1" && payload.catalog && payload.screen) {
+                        renderCatalog(payload.catalog);
+                        clearResumeOnBootFlag();
+                        if (isOperatorHomeScreen(payload.screen?.screen?.key)) {
+                            state.operatorHomePayload = null;
+                            state.operatorHomePromise = null;
+                        }
+                        renderScreen(payload.screen);
+                        refreshGovernanceBadges();
+                        if (requestedScreen && payload.resolved_screen !== requestedScreen) {
+                            setStatus("上次工作区已不可用，已返回首页");
+                        }
+                        runtimeCore.mark?.("p0-ready");
+                        runtimeCore.measure?.("bootstrap-to-p0", "bootstrap-start", "p0-ready");
+                        return;
+                    }
+                } catch (optimizedError) {
+                    if (![0, 404, 405].includes(Number(optimizedError?.status || 0))) {
+                        throw optimizedError;
+                    }
+                }
+            }
             const catalog = await fetchJson(catalogUrl());
             renderCatalog(catalog);
-            await loadScreen(catalog.default_screen);
+            const isResumeAttempt = Boolean(shouldResumeOnBoot() && state.lastNonHomeScreen);
+            const initialScreen = isResumeAttempt
+                ? state.lastNonHomeScreen
+                : catalog.default_screen;
+            clearResumeOnBootFlag();
+            const loaded = await loadScreen(initialScreen);
+            if (!loaded && isResumeAttempt) {
+                setStatus("上次工作区已不可用，已返回首页");
+                await loadScreen(catalog.default_screen);
+            }
+            runtimeCore.mark?.("p0-ready");
+            runtimeCore.measure?.("bootstrap-to-p0", "bootstrap-start", "p0-ready");
         } catch (error) {
-            els.moduleTree.innerHTML = `<div class="tui-error">${escapeHtml(error.message)}</div>`;
-            renderError(error.message);
+            els.moduleTree.innerHTML = '<div class="tui-error">导航暂时不可用</div>';
+            renderBoundedApplicationError(error);
         }
     }
 
     loadStoredProgress();
+    loadStoredOperatorState();
     applyTheme(loadStoredTheme(), { silent: true });
     loadStoredInspectorWidth();
     bindControls();

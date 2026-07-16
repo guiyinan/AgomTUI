@@ -11,7 +11,9 @@ from demo import standalone_server as demo
 
 
 def _json_response(payload: Any, *, status: int = 200) -> JsonResponse:
-    return JsonResponse(payload, status=status, json_dumps_params={"ensure_ascii": False, "indent": 2})
+    return JsonResponse(
+        payload, status=status, json_dumps_params={"ensure_ascii": False, "indent": 2}
+    )
 
 
 @require_GET
@@ -51,7 +53,10 @@ def host_home(request: HttpRequest) -> HttpResponse:
       </div>
     </section>
     """
-    return HttpResponse(demo.layout("AgomTUI Django Host", body, active="integration"), content_type="text/html; charset=utf-8")
+    return HttpResponse(
+        demo.layout("AgomTUI Django Host", body, active="integration"),
+        content_type="text/html; charset=utf-8",
+    )
 
 
 @require_GET
@@ -84,12 +89,40 @@ def host_catalog(request: HttpRequest) -> JsonResponse:
 
 
 @require_GET
+def host_bootstrap(request: HttpRequest) -> JsonResponse:
+    """Return the optimized Runtime bootstrap contract for the demo host."""
+
+    catalog = demo.hostify_catalog(demo.build_catalog())
+    requested_screen = str(request.GET.get("screen_key") or "").strip()
+    resolved_screen = requested_screen or str(catalog["default_screen"])
+    restored = False
+    try:
+        screen = demo.hostify_screen_spec(demo.build_screen_spec(resolved_screen))
+    except KeyError:
+        resolved_screen = str(catalog["default_screen"])
+        screen = demo.hostify_screen_spec(demo.build_screen_spec(resolved_screen))
+        restored = bool(requested_screen)
+    return _json_response(
+        {
+            "contract": "tui-bootstrap.v1",
+            "catalog": catalog,
+            "screen": screen,
+            "requested_screen": requested_screen,
+            "resolved_screen": resolved_screen,
+            "restored": restored,
+        }
+    )
+
+
+@require_GET
 def host_screen(request: HttpRequest, screen_key: str) -> JsonResponse:
     del request
     try:
         payload = demo.hostify_screen_spec(demo.build_screen_spec(screen_key))
     except KeyError:
-        return _json_response({"ok": False, "error": f"Unknown screen: {screen_key}"}, status=404)
+        return _json_response(
+            {"ok": False, "error": f"Unknown screen: {screen_key}"}, status=404
+        )
     return _json_response(payload)
 
 
@@ -102,15 +135,23 @@ def host_action(request: HttpRequest, action_key: str) -> JsonResponse:
         return _json_response({"ok": False, "error": "Invalid JSON body"}, status=400)
     params = body.get("params") or {}
     confirmed = bool(body.get("confirmed"))
-    confirmation_evidence = body.get("confirmation") if isinstance(body.get("confirmation"), dict) else None
-    reauth_evidence = body.get("reauth") if isinstance(body.get("reauth"), dict) else None
+    confirmation_evidence = (
+        body.get("confirmation") if isinstance(body.get("confirmation"), dict) else None
+    )
+    reauth_evidence = (
+        body.get("reauth") if isinstance(body.get("reauth"), dict) else None
+    )
     try:
         payload = demo.hostify_action_result(
-            demo.handle_action(action_key, params, confirmed, confirmation_evidence, reauth_evidence),
+            demo.handle_action(
+                action_key, params, confirmed, confirmation_evidence, reauth_evidence
+            ),
             api_base="/api/tui",
         )
     except KeyError:
-        return _json_response({"ok": False, "error": f"Unknown action: {action_key}"}, status=404)
+        return _json_response(
+            {"ok": False, "error": f"Unknown action: {action_key}"}, status=404
+        )
     return _json_response(payload)
 
 

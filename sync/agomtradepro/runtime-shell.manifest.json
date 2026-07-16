@@ -1,6 +1,7 @@
 {
   "sync_name": "agomtradepro-runtime-shell",
   "upstream_project": "agomTradePro",
+  "runtime_version": "0.2.0",
   "git_source": {
     "fallback_ref": "HEAD",
     "baseline_ref": "HEAD",
@@ -11,7 +12,8 @@
   "boundary": {
     "direction": "one-way",
     "allowed_target_prefixes": [
-      "packages/agomtui-runtime/reference"
+      "packages/agomtui-runtime/reference",
+      "packages/agomtui-runtime/frontend"
     ],
     "forbidden_product_areas": [
       "packages/agomtui-core",
@@ -22,6 +24,69 @@
     ]
   },
   "entries": [
+    {
+      "id": "runtime-core-source-api",
+      "description": "Mirror the upstream host-neutral API URL module.",
+      "source": "frontend/agomtui-runtime/src/api.js",
+      "target": "packages/agomtui-runtime/frontend/src/api.js",
+      "transform": "copy"
+    },
+    {
+      "id": "runtime-core-source-events",
+      "description": "Mirror the upstream host-neutral event helpers.",
+      "source": "frontend/agomtui-runtime/src/events.js",
+      "target": "packages/agomtui-runtime/frontend/src/events.js",
+      "transform": "copy"
+    },
+    {
+      "id": "runtime-core-source-extensions",
+      "description": "Mirror the upstream host extension protocol.",
+      "source": "frontend/agomtui-runtime/src/extensions.js",
+      "target": "packages/agomtui-runtime/frontend/src/extensions.js",
+      "transform": "copy"
+    },
+    {
+      "id": "runtime-core-source-pagination",
+      "description": "Mirror the upstream client pagination module.",
+      "source": "frontend/agomtui-runtime/src/pagination.js",
+      "target": "packages/agomtui-runtime/frontend/src/pagination.js",
+      "transform": "copy"
+    },
+    {
+      "id": "runtime-core-source-performance",
+      "description": "Mirror the upstream runtime performance module.",
+      "source": "frontend/agomtui-runtime/src/performance.js",
+      "target": "packages/agomtui-runtime/frontend/src/performance.js",
+      "transform": "copy"
+    },
+    {
+      "id": "runtime-core-source-state",
+      "description": "Mirror the upstream runtime state module.",
+      "source": "frontend/agomtui-runtime/src/state.js",
+      "target": "packages/agomtui-runtime/frontend/src/state.js",
+      "transform": "copy"
+    },
+    {
+      "id": "runtime-core-source-entry",
+      "description": "Mirror the upstream runtime core entrypoint.",
+      "source": "frontend/agomtui-runtime/src/index.js",
+      "target": "packages/agomtui-runtime/frontend/src/index.js",
+      "transform": "copy"
+    },
+    {
+      "id": "runtime-core-reference",
+      "description": "Copy the upstream esbuild runtime core bundle.",
+      "source": "static/js/agomtui-runtime-core.js",
+      "target": "packages/agomtui-runtime/reference/static/js/agomtui-runtime-core.js",
+      "transform": "copy"
+    },
+    {
+      "id": "runtime-version-manifest",
+      "description": "Copy the upstream runtime version and content hashes.",
+      "source": "config/tui/agomtui-runtime.manifest.json",
+      "target": "packages/agomtui-runtime/reference/agomtui-runtime.manifest.json",
+      "transform": "copy"
+    },
     {
       "id": "runtime-html-reference",
       "description": "Transform the Django host template into the standalone runtime reference HTML.",

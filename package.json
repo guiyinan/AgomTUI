@@ -1,0 +1,13 @@
+{
+  "name": "agomtui-workspace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:runtime": "node scripts/build_runtime.mjs",
+    "check:runtime": "node scripts/build_runtime.mjs --check",
+    "test:runtime-js": "node --test packages/agomtui-runtime/frontend/tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.6"
+  }
+}
