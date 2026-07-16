@@ -82,6 +82,27 @@ class RuntimeAssetHelperTests(unittest.TestCase):
         self.assertIn("function loadScreen(screenKey, options = {})", asset)
         self.assertIn("defaultAction && !options.suppressAutoAction", asset)
 
+    def test_runtime_dashboard_flow_and_module_rail_are_content_safe(self) -> None:
+        script = runtime_asset("js/tui-workbench.js").body.decode("utf-8")
+        css = runtime_asset("css/tui-workbench.css").body.decode("utf-8")
+
+        self.assertIn("function revealModuleScreen(screenButton)", script)
+        self.assertIn(
+            'screenButton.scrollIntoView({ block: "nearest", inline: "nearest" })',
+            script,
+        )
+        self.assertIn(
+            "const contentFlow = desktopColumns === 1 || isOperatorHomeScreen(screen?.key)",
+            script,
+        )
+        self.assertIn("els.moduleTree.hidden = state.railCollapsed", script)
+        self.assertIn("els.moduleTree.inert = state.railCollapsed", script)
+        self.assertIn(".tui-dashboard-grid.is-content-flow", css)
+        self.assertIn(
+            ".tui-app.is-rail-collapsed .tui-rail .tui-titlebar-text",
+            css,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
