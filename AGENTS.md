@@ -66,6 +66,7 @@ When changing the TUI contract, keep schema, runtime, compiler, and tests aligne
 Current user-facing contract fields that must stay synchronized:
 
 - `screen.user_experience`
+- `screen.dashboard_layout`
 - `dashboard_panels[].user_priority`
 - `dashboard_panels[].presentation_semantic`
 - `actions[].result_semantics`

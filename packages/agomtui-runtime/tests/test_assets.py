@@ -95,9 +95,12 @@ class RuntimeAssetHelperTests(unittest.TestCase):
             "const contentFlow = desktopColumns === 1 || isOperatorHomeScreen(screen?.key)",
             script,
         )
+        self.assertIn('screen?.dashboard_layout || "adaptive_grid"', script)
+        self.assertIn('=== "task_flow"', script)
         self.assertIn("els.moduleTree.hidden = state.railCollapsed", script)
         self.assertIn("els.moduleTree.inert = state.railCollapsed", script)
         self.assertIn(".tui-dashboard-grid.is-content-flow", css)
+        self.assertIn(".tui-dashboard-grid.is-content-flow .tui-dash-panel", css)
         self.assertIn(
             ".tui-app.is-rail-collapsed .tui-rail .tui-titlebar-text",
             css,

@@ -14,6 +14,7 @@ AgomTUI 的开发标准围绕一个目标：让 metadata、runtime contract、go
 - 发布态 metadata artifact 是产物，不是源头；不要直接手改。
 - 需要跨生成周期保留的改动必须进入 reviewed override 文件。
 - 每个发布态 metadata artifact 都必须通过 `tui-metadata.v3` schema 校验。
+- 可变高度的主工件使用 `screen.dashboard_layout=task_flow`，让主工作区承担纵向滚动；有界摘要卡片使用默认的 `adaptive_grid`。
 - 新增 view model、renderer、host slot 或 action governance 字段时，先更新文档和 contract test。
 
 ## Governed action 规则

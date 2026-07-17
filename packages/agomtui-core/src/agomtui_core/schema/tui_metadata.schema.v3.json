@@ -73,6 +73,7 @@
         "status": { "enum": ["online", "planned", "hidden", "disabled"] },
         "chrome_mode": { "enum": ["", "immersive"] },
         "default_action_key": { "type": "string" },
+        "dashboard_layout": { "enum": ["adaptive_grid", "task_flow"] },
         "user_experience": { "$ref": "#/$defs/userExperience" },
         "dashboard_panels": {
           "type": "array",

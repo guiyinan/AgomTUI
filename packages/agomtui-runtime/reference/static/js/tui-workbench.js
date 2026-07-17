@@ -2409,6 +2409,9 @@
     }
 
     function dashboardDesktopColumns(screen) {
+        if (String(screen?.dashboard_layout || "adaptive_grid").trim() === "task_flow") {
+            return 1;
+        }
         const journey = screenUserExperience(screen).journey;
         if ((runtimeConfig.host?.singleColumnScreens || []).includes(screen?.key)) {
             return 1;
@@ -2513,10 +2516,16 @@
                 }
                 button.disabled = true;
                 try {
-                    await runAction(button.dataset.rowActionKey, null, {
-                        params,
-                        dashboardPanelKey: panel.key,
-                    });
+                    const action = currentAction(button.dataset.rowActionKey);
+                    const method = String(action?.method || "GET").trim().toUpperCase();
+                    const refreshesDashboard = !["GET", "HEAD", "OPTIONS"].includes(method);
+                    await runAction(
+                        button.dataset.rowActionKey,
+                        null,
+                        refreshesDashboard
+                            ? { params, dashboardPanelKey: panel.key }
+                            : { params },
+                    );
                 } finally {
                     button.disabled = false;
                 }

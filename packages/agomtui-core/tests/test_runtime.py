@@ -530,6 +530,31 @@ class RuntimeHelpersTests(unittest.TestCase):
         self.assertEqual(validated["actions"][0]["fields"][0]["presentation_semantic"], "prompt_text")
         self.assertEqual(validated["screens"][0]["dashboard_panels"][0]["user_priority"], "p0")
 
+    def test_metadata_accepts_and_compacts_dashboard_layout_contract(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        payload["screens"][0]["dashboard_layout"] = "task_flow"
+
+        validated = validate_tui_metadata(payload)
+        compacted = compact_tui_metadata_payload(validated)
+
+        self.assertEqual(validated["screens"][0]["dashboard_layout"], "task_flow")
+        self.assertEqual(compacted["screens"][0]["dashboard_layout"], "task_flow")
+
+    def test_metadata_rejects_unknown_dashboard_layout(self) -> None:
+        payload = json.loads(
+            (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        payload["screens"][0]["dashboard_layout"] = "masonry"
+
+        with self.assertRaises(TuiMetadataValidationError):
+            validate_tui_metadata(payload)
+
     def test_metadata_rejects_prompt_presentation_semantic_without_textarea(self) -> None:
         payload = json.loads(
             (REPO_ROOT / "examples" / "metadata" / "minimal.tui_operation_graph.json").read_text(encoding="utf-8")
