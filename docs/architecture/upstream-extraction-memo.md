@@ -21,6 +21,7 @@ The extracted skill should target host-agnostic runtime metadata first. It shoul
 ## Runtime shell sync notes
 
 The current runtime-shell sync tooling is still organized around a one-way upstream-to-reference flow.
+AgomTradePro is the only source owner for synchronized Runtime behavior. AgomTUI may test and package the synchronized files, but layout fixes and generic Runtime behavior changes must begin upstream.
 
 Key files:
 

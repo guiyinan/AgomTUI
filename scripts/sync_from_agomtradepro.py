@@ -118,11 +118,16 @@ def parse_args() -> argparse.Namespace:
 
 def load_manifest(path: Path) -> dict[str, Any]:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        manifest = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise SyncError(f"Manifest not found: {path}") from exc
     except json.JSONDecodeError as exc:
         raise SyncError(f"Manifest is not valid JSON: {path}: {exc}") from exc
+    if manifest.get("source_owner") != "AgomTradePro":
+        raise SyncError("Sync manifest source_owner must remain AgomTradePro.")
+    if manifest.get("boundary", {}).get("direction") != "one-way":
+        raise SyncError("Sync manifest direction must remain one-way from AgomTradePro.")
+    return manifest
 
 
 def load_optional_config(path: Path) -> dict[str, Any]:

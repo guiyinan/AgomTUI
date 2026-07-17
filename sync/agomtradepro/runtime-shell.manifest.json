@@ -1,5 +1,6 @@
 {
   "sync_name": "agomtradepro-runtime-shell",
+  "source_owner": "AgomTradePro",
   "upstream_project": "agomTradePro",
   "runtime_version": "0.2.0",
   "git_source": {
@@ -29,6 +30,13 @@
       "description": "Mirror the upstream host-neutral API URL module.",
       "source": "frontend/agomtui-runtime/src/api.js",
       "target": "packages/agomtui-runtime/frontend/src/api.js",
+      "transform": "copy"
+    },
+    {
+      "id": "runtime-core-source-dashboard-layout",
+      "description": "Mirror the authoritative upstream dashboard layout resolver.",
+      "source": "frontend/agomtui-runtime/src/dashboard-layout.js",
+      "target": "packages/agomtui-runtime/frontend/src/dashboard-layout.js",
       "transform": "copy"
     },
     {

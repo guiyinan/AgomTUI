@@ -80,4 +80,6 @@ The reference shell in this package may be refreshed through the repository's in
 
 AgomTradePro remains the only Runtime source owner. The allowlisted `frontend/src/` modules, generated reference assets, and version/hash manifest move from AgomTradePro into this package. Synchronized files are read-only downstream mirrors: fixes start upstream, then return through the sync command.
 
+The synchronized manifest must declare `source_owner=AgomTradePro`, carry the upstream schema hash and allowed dashboard layout enum, and the dashboard layout resolver is copied as an upstream-owned module. Downstream CI checks its compatible schema enum and behavior but must not maintain a competing resolver.
+
 Use `npm ci`, `npm run check:runtime`, and `npm run test:runtime-js` after every synchronization. The checked-in bundle lets Python package consumers run without Node.js.
